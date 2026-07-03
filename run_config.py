@@ -32,7 +32,8 @@ class Config:
         # self.run_name = 'mx17_det6_det7_hv_scan_6-26-26'
         # self.run_name = 'mx17_det3_saturday_scan_6-27-26'
         # self.run_name = 'p2_det1_long_run_6-30-26'
-        self.run_name = 'p2_det1_mesh_hv_scan_7-2-26'
+        # self.run_name = 'p2_det1_mesh_hv_scan_7-2-26'
+        self.run_name = 'p2_det1_long_run_7-4-26'
         # self.data_out_dir = '/mnt/cosmic_data/Run/'
         # self.data_out_dir = '/data/cosmic_data/Run_MX/'
         self.base_out_dir = BASE_DATA_DIR
@@ -123,43 +124,37 @@ class Config:
         default_drift, default_resist = 1000, 490  # V
 
         # ---------------------------------------------------------------------
-        # P2 mesh HV scan (7-2-26): step the P2 mesh DOWN from the 420 V
-        # operating point in 5 V steps, 30 min per point, 16 points -> ~8 h.
-        # The drift is stepped down by the SAME amount at each point so the
-        # potential across the drift gap (drift - mesh) is held constant at its
-        # operating value of 600 - 420 = 180 V. Only the amplification (mesh)
-        # field is scanned. Channels 8-11 on cards 0/3 are the M3 telescope
-        # (drift 500 / mesh 455), held at operating point throughout.
+        # P2 constant-HV long efficiency run (weekend 7-4-26): a single 14 h
+        # subrun at fixed HV to collect high statistics for an efficiency
+        # measurement at one operating point. P2 mesh = 440 V, drift = 600 V
+        # (drift gap = drift - mesh = 160 V). M3 telescope (cards 0/3 ch 8-11,
+        # drift 500 / mesh 455) held at its usual operating point.
         # P2_1 HV channels: mesh = (card 1, ch 0), drift = (card 1, ch 1).
-        mesh_op, drift_op = 420, 600          # V, P2 operating point
-        gap_v = drift_op - mesh_op            # 180 V across the drift gap, held fixed
-        step_v, n_points, minutes = 5, 16, 30  # 5 V steps, 16 points, 30 min each -> 8 h
-        for i in range(n_points):
-            mesh_v = mesh_op - i * step_v
-            drift_v = mesh_v + gap_v          # keep drift - mesh = gap_v (180 V)
-            new_subrun = {
-                'sub_run_name': f'mesh_{mesh_v}V_drift_{drift_v}V',
-                'run_time': minutes,  # Minutes
-                'hvs': {
-                    0: {
-                        8: 500, #M3
-                        9: 500, #M3
-                        10: 500, #M3
-                        11: 500, #M3
-                    },
-                    1: {
-                        0: mesh_v,   #P2 mesh
-                        1: drift_v,  #P2 drift
-                    },
-                    3: {
-                        8: 455, #M3
-                        9: 455, #M3
-                        10: 455, #M3
-                        11: 455, #M3
-                    }
+        # HV is powered off automatically at the end via power_off_hv_at_end.
+        mesh_v, drift_v, minutes = 440, 600, 14 * 60  # 14 h
+        new_subrun = {
+            'sub_run_name': f'mesh_{mesh_v}V_drift_{drift_v}V',
+            'run_time': minutes,  # Minutes
+            'hvs': {
+                0: {
+                    8: 500, #M3
+                    9: 500, #M3
+                    10: 500, #M3
+                    11: 500, #M3
                 },
-            }
-            self.sub_runs.append(new_subrun)
+                1: {
+                    0: mesh_v,   #P2 mesh
+                    1: drift_v,  #P2 drift
+                },
+                3: {
+                    8: 455, #M3
+                    9: 455, #M3
+                    10: 455, #M3
+                    11: 455, #M3
+                }
+            },
+        }
+        self.sub_runs.append(new_subrun)
 
 
         # new_subrun = {
