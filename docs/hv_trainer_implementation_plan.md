@@ -58,13 +58,14 @@ Contents:
 ```python
 detector = 'P2_2'            # name in run_config.py detectors list → hv_channels
 train_channel = 'mesh'       # which hv_channels entry is being conditioned
-linked_channels = {          # optional: channels that follow the trained one
-    'drift': {'mode': 'offset', 'value': 160},   # drift = mesh + 160 V (constant gap)
-    # or {'mode': 'fixed', 'value': 600}, or omit to leave untouched
+fixed_channels = {           # held at user-predefined values for the whole session
+    'drift': 600,            # (decision #2: drift stays at a user-set fixed value)
 }
 controller = dict(           # TrainerConfig fields — start from backtested values
     i_comp=10.0, i_comp_frac=0.95, i_safe=2.0,
-    v_target=470.0,          # ambition; plateau detection below finds the real max
+    v_target=470.0,          # decision #3: USER-PREDEFINED aim; the trainer never
+                             # exceeds it — plateau detection only reports where the
+                             # detector actually stalls below it
     v_floor=250.0,           # never command below (keeps detector biased)
     v_step_up=5.0, v_step_down=25.0,
     dwell=60.0, recover_dwell=60.0, backoff_after=6.0,  # << crate TRIP=30 s
@@ -75,9 +76,11 @@ session = dict(
     max_hours=12.0,
     success_hold_min=45.0,   # at v_target with imon<i_safe this long → TRAINED
     plateau_window_min=90.0, # if best-held V hasn't improved in this window → PLATEAU
-    on_finish='hold',        # 'hold' | 'standby:<V>' | 'off'
+    on_finish='hold',        # decision #1: hold at reached voltage (default; the
+                             # 'standby:<V>' / 'off' options remain for special cases)
     on_error='standby:250',  # crash/exception policy — never leave undefined
-    crate_kill_reenable=2,   # auto re-enable after a real crate kill, at most N times
+    crate_kill_reenable=2,   # decision #4: auto re-enable at most 2x, then stop via
+                             # on_error and flag STALLED in Flask
 )
 ```
 
@@ -94,10 +97,10 @@ Main loop, structured like `monitor_hvs()`:
 3. Power on the trained + linked channels if off; command `v_start`; wait for ramp
    (reuse the `set_hvs` ramp-wait idiom, 10 s poll).
 4. Every `poll` seconds:
-   - read `power, v0, vmon, imon` for trained + linked channels,
+   - read `power, v0, vmon, imon` for trained + fixed channels,
    - append the `hv_monitor.csv` row (same schema/flush pattern as `monitor_hvs`),
    - `vset, state = controller.step(now, imon, dt)`; push `set_ch_v0` when it changed
-     by > 0.5 V; move linked channels per their rule,
+     by > 0.5 V; fixed channels are set once at startup and only watched thereafter,
    - detect **crate kill** (power dropped to 0 while we think it's on): log `KILL`,
      re-enable per `crate_kill_reenable` budget or stop via `on_error`,
    - append any controller event to `hv_trainer_events.csv`,
@@ -138,6 +141,18 @@ stop sends SIGINT (tmux `C-c`) so the service runs its shutdown policy — **not
 - Document the residual risk: nothing stops a *manual* GECO/web session from fighting
   the trainer — same as today for hv_control.
 
+## 4b. Run-database integration (decision #5)
+
+Training sessions **are** part of the run database: they are the preparation step for
+the efficiency long runs and especially the HV scans. The run-shaped JSON + `Run/`
+directory convention already achieves this; in addition:
+
+- naming convention `hv_training_<det>_<M-D-YY>` keeps sessions filterable,
+- the final `DONE` summary (reached voltage, TRAINED/PLATEAU verdict, #backoffs,
+  duration) is written both to `hv_trainer_events.csv` and into the run-shaped JSON
+  (`training_result` key), so an HV-scan config can later read "what is this
+  detector trained up to" programmatically before choosing its scan range.
+
 ## 5. Safety review checklist (before first unattended night)
 
 - [ ] `backoff_after` ≪ crate TRIP time on every channel involved (config assert).
@@ -163,14 +178,15 @@ stop sends SIGINT (tmux `C-c`) so the service runs its shutdown policy — **not
 | 4 | First **supervised daytime** live training of P2_2 at a modest `v_target` (e.g. current working point +10–20 V); watch Flask HV tab; tune | ½ day at bench | medium — someone present |
 | 5 | First unattended overnight session; review `hv_trainer_events.csv` + plateau report next morning | overnight | after 0–4 pass |
 
-## 7. Open decisions (Alexandra)
+## 7. Decisions (Alexandra, 2026-07-07)
 
-1. **`on_finish` default** — hold at reached voltage, drop to a standby V, or power off?
-2. **Drift channel during mesh training** — fixed at operating value, constant-gap
-   offset link, or untouched?
-3. **Plateau definition** — is "best voltage *held quietly* for ≥ dwell, not improved in
-   90 min" the right operational meaning of "maximum the detector can physically reach"?
-4. **Crate-kill auto-re-enable** — allowed at all unattended? (Suggest: yes, ≤ 2×,
-   then stop at `on_error` policy and flag STALLED in Flask.)
-5. Does training belong in the run database / logbook (the run-shaped JSON makes it
-   look like a run — name convention `hv_training_*` keeps it filterable)?
+1. **`on_finish`**: hold at reached voltage.
+2. **Drift channel during mesh training**: held at a user-predefined fixed value
+   (`fixed_channels` in the config; no offset-linking).
+3. **Target voltage**: user-predefined (`v_target`); the trainer aims for it and never
+   beyond. Plateau detection is kept as a *reporting* mechanism for when the detector
+   stalls below the requested target.
+4. **Crate-kill auto-re-enable**: yes, at most 2×, then stop via `on_error` and flag
+   STALLED in Flask.
+5. **Run database**: training sessions belong in it — they are the preparation for the
+   long runs / HV scans. See §4b.
