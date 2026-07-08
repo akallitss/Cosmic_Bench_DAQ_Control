@@ -28,11 +28,16 @@ CAEN_TRIP_TIME = 30.0  # crate OVC->kill time [s]; backoff_after must be << this
 
 def build_config():
     # ------------------------------------------------------------------ #
-    # Session: train P2 det 1 + det 2 mesh channels together (2026-07-08).
-    # Channels from run_config.py P2_1 hv_channels + bench cabling for det 2
-    # (P2_2 not yet in run_config detectors): det 1 mesh 1:0 / drift 1:1,
-    # det 2 mesh 1:2 / drift 1:3. Drifts held fixed at 550 V, mesh trained
-    # to 500 V from a gentle 300 V entry point.
+    # Session: train P2 det 1 mesh to 500 V, drift fixed 550 V (2026-07-08).
+    # Restarted from v_start=450 V: the first session (both dets) trained
+    # det 1 cleanly 300->455 V, 0 backoffs, before being stopped to drop
+    # det 2.
+    # P2_2 (mesh 1:2 / drift 1:3) EXCLUDED: its mesh channel is an ohmic
+    # ~11.5 MOhm load to ground (imon tracked vmon linearly, compliance
+    # 10 uA reached at 115 V, crate tripped after the 30 s Trip time;
+    # 9 backoffs / 3 kills all at the same 115 V wall). Not a conditioning
+    # problem -- needs a physical check of the det 2 mesh HV line at the
+    # bench before it goes back in the config.
     # ------------------------------------------------------------------ #
     controller = dict(
         i_comp=10.0, i_comp_frac=0.95, i_safe=2.0,
@@ -51,16 +56,18 @@ def build_config():
                 'train': {'label': 'mesh', 'slot': 1, 'ch': 0},
                 'fixed': [{'label': 'drift', 'slot': 1, 'ch': 1, 'v': 550.0}],
                 'controller': dict(controller),
-                'v_start': 300.0,
+                'v_start': 450.0,
             },
-            {
-                'name': 'P2_2',
-                'det_type': 'P2',
-                'train': {'label': 'mesh', 'slot': 1, 'ch': 2},
-                'fixed': [{'label': 'drift', 'slot': 1, 'ch': 3, 'v': 550.0}],
-                'controller': dict(controller),
-                'v_start': 300.0,
-            },
+            # P2_2 excluded 2026-07-08: ohmic ~11.5 MOhm short on mesh 1:2
+            # (see header note). Re-add after the HV line is checked.
+            # {
+            #     'name': 'P2_2',
+            #     'det_type': 'P2',
+            #     'train': {'label': 'mesh', 'slot': 1, 'ch': 2},
+            #     'fixed': [{'label': 'drift', 'slot': 1, 'ch': 3, 'v': 550.0}],
+            #     'controller': dict(controller),
+            #     'v_start': 300.0,
+            # },
         ],
         'hv': {
             'ip': '192.168.10.81',
@@ -70,7 +77,9 @@ def build_config():
         'out': {
             'base_dir': '/mnt/cosmic_data/P2/Run',
             'run_name': 'hv_training_p2_det1_det2_7-8-26',
-            'sub_run_name': 'train_mesh500V_drift550V',
+            # _r2: det-1-only restart; session 1 (both dets) kept untouched in
+            # train_mesh500V_drift550V/
+            'sub_run_name': 'train_mesh500V_drift550V_r2',
         },
         'json_run_config_dir': 'config/json_run_configs',
         'state_json': 'config/hv_trainer_state.json',

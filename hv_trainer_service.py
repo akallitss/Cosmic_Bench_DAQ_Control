@@ -147,10 +147,20 @@ class TrainerService:
         self.write_run_json()
 
     def write_run_json(self, training_result=None):
+        # Keep sub_runs from previous sessions of the same run (e.g. a
+        # restart under a new sub_run_name) visible in the Flask HV tab.
+        sub_runs = [{'sub_run_name': self.sub_run_name}]
+        try:
+            with open(self.run_json_path) as f:
+                for sr in json.load(f).get('sub_runs', []):
+                    if sr.get('sub_run_name') != self.sub_run_name:
+                        sub_runs.append(sr)
+        except (IOError, OSError, ValueError):
+            pass
         run_json = {
             'run_name': self.run_name,
             'run_out_dir': self.run_out_dir,
-            'sub_runs': [{'sub_run_name': self.sub_run_name}],
+            'sub_runs': sub_runs,
             'hv_trainer': True,
         }
         if training_result is not None:
@@ -235,33 +245,45 @@ class TrainerService:
                            'taking over powered channels: ' + ', '.join(busy))
 
     def power_up(self):
-        """Command fixed voltages + v_start on train channels, wait for ramp."""
-        targets = {}
+        """Command fixed voltages + v_start on train channels, wait for ramp.
+        A channel that trips (power drops) during the ramp stalls its detector
+        immediately instead of blocking the wait until RAMP_TIMEOUT."""
+        targets = {}   # (slot, ch) -> (det, target_v)
         for det in self.dets:
             tr = det.train
             self.set_v0(tr['slot'], tr['ch'], det.v_start)
             det.last_pushed = det.v_start
-            targets[(tr['slot'], tr['ch'])] = det.v_start
+            targets[(tr['slot'], tr['ch'])] = (det, det.v_start)
             for fx in det.fixed:
                 self.set_v0(fx['slot'], fx['ch'], fx['v'])
-                targets[(fx['slot'], fx['ch'])] = fx['v']
+                targets[(fx['slot'], fx['ch'])] = (det, fx['v'])
         for slot, ch in targets:
             power, _, _ = self.read_channel(slot, ch)
             if not power:
                 self.set_power(slot, ch, 1)
         self.log_event('-', '-', 'RAMP_START', None, None,
                        '; '.join('{}:{}->{:.0f}V'.format(s, c, v)
-                                 for (s, c), v in sorted(targets.items())))
+                                 for (s, c), (_, v) in sorted(targets.items())))
         if self.dry_run:
             return
         t0 = time.monotonic()
         while not self.stop_requested:
-            self.log_monitor_row()
+            readings = self.log_monitor_row()
             pending = []
-            for (slot, ch), v in targets.items():
-                _, vmon, _ = self.read_channel(slot, ch)
-                if abs(vmon - v) > RAMP_TOL:
+            for (slot, ch), (det, v) in targets.items():
+                if det.finished():
+                    continue
+                power, vmon, imon = readings[(slot, ch)]
+                if not power:
+                    self.log_event(det.name, '{}:{}'.format(slot, ch),
+                                   'RAMP_TRIP', v, imon,
+                                   'channel tripped during initial ramp')
+                    self.finish_detector(det, 'STALLED', on_error=True)
+                elif abs(vmon - v) > RAMP_TOL:
                     pending.append('{}:{} {:.1f}->{:.0f}'.format(slot, ch, vmon, v))
+            self.write_state()
+            if all(det.finished() for det in self.dets):
+                return
             if not pending:
                 self.log_event('-', '-', 'RAMP_DONE', None, None, '')
                 return
@@ -436,6 +458,7 @@ class TrainerService:
 
         with CAENHVController(hv['ip'], hv['username'], hv['password']) as caen:
             self.caen = caen
+            self.write_state()  # heartbeat exists from the very start (ramp incl.)
             self.startup_check()
             self.power_up()
             for det in self.dets:
