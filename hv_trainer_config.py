@@ -47,6 +47,11 @@ def build_config():
         dwell=60.0, recover_dwell=60.0,
         backoff_after=6.0,      # << crate TRIP = 30 s
         caen_trip_time=CAEN_TRIP_TIME,
+        # Continuous-sparking backoff (added after r2): P2_1 at 455 V sparked
+        # ~7/min with imon 5-9 uA, each spark self-quenching below the OVC
+        # threshold, so only an average-current criterion catches it. Spark
+        # regime EMA ~6 uA; quiet-with-blips at 430 V ~0.9 uA.
+        i_elev=3.0, i_avg_tau=120.0,
     )
     config = {
         'detectors': [
@@ -56,7 +61,7 @@ def build_config():
                 'train': {'label': 'mesh', 'slot': 1, 'ch': 0},
                 'fixed': [{'label': 'drift', 'slot': 1, 'ch': 1, 'v': 550.0}],
                 'controller': dict(controller),
-                'v_start': 450.0,
+                'v_start': 430.0,
             },
             # P2_2 excluded 2026-07-08: ohmic ~11.5 MOhm short on mesh 1:2
             # (see header note). Re-add after the HV line is checked.
@@ -77,9 +82,9 @@ def build_config():
         'out': {
             'base_dir': '/mnt/cosmic_data/P2/Run',
             'run_name': 'hv_training_p2_det1_det2_7-8-26',
-            # _r2: det-1-only restart; session 1 (both dets) kept untouched in
-            # train_mesh500V_drift550V/
-            'sub_run_name': 'train_mesh500V_drift550V_r2',
+            # _r3: det 1 restart from 430 V with the elevated-current backoff
+            # (r2 sat sparking at 455 V; its CSVs are kept untouched).
+            'sub_run_name': 'train_mesh500V_drift550V_r3',
         },
         'json_run_config_dir': 'config/json_run_configs',
         'state_json': 'config/hv_trainer_state.json',

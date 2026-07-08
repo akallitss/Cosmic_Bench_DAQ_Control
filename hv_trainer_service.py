@@ -346,7 +346,13 @@ class TrainerService:
         chan_str = '{}:{}'.format(tr['slot'], tr['ch'])
         try:
             if policy == 'hold':
-                pass
+                # PLATEAU means the detector never held above best_held_v —
+                # the current vset may be a probing step into the sparking
+                # region, so park at the proven voltage instead.
+                if status == 'PLATEAU' and det.ctrl.vset > det.best_held_v:
+                    det.ctrl.vset = det.best_held_v
+                    self.set_v0(tr['slot'], tr['ch'], det.best_held_v)
+                    det.last_pushed = det.best_held_v
             elif policy.startswith('standby:'):
                 v = float(policy.split(':', 1)[1])
                 det.ctrl.vset = v
