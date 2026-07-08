@@ -15,6 +15,8 @@ for i in $(seq 1 30); do
     if ! tmux list-panes -t hv_trainer -F '#{pane_current_command}' 2>/dev/null \
             | grep -q python; then
         echo "Trainer exited cleanly."
+        # Remove the now-idle session so start_hv_trainer.sh can recreate it.
+        tmux kill-session -t hv_trainer 2>/dev/null
         exit 0
     fi
     sleep 2
