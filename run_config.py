@@ -518,34 +518,36 @@ class Config:
                     'drift': (1, 3),
                     'mesh': (1, 2),
                 },
-                # Cabled incrementally from the connectors left on FEU 6 (5-8), then FEU 7 (1-8),
-                # then FEU 8 (1-8). FEU 8 is left out of this run (crashes the DAQ), so c_7 - c_10
-                # are commented out and won't be read out.
+                # Physical cabling deduced from track-hit correlation on the 7-9-26 run
+                # (hit-level Procrustes fit: scale 0.92, median residual 11 mm; wrong
+                # starts give scale ~0.25 / ~100 mm):
+                #   - connector 1 is DISCONNECTED from the detector (no readout);
+                #   - connectors 2-7 go incrementally to FEU 6 (5-8) then FEU 7 (1-8);
+                #   - connectors 8-10 continue on FEU 8, excluded from runs for now
+                #     (crashes the DAQ), so they are commented out.
                 'dream_feus': {
-                    'c_1_bot': (6, 5),  # Runs along x direction, indicates y hit location
-                    'c_1_top': (6, 6),
-                    'c_2_bot': (6, 7),
-                    'c_2_top': (6, 8),
-                    'c_3_bot': (7, 1),
-                    'c_3_top': (7, 2),
-                    'c_4_bot': (7, 3),
-                    'c_4_top': (7, 4),
-                    'c_5_bot': (7, 5),  # Runs along y direction, indicates x hit location
-                    'c_5_top': (7, 6),
-                    'c_6_bot': (7, 7),
-                    'c_6_top': (7, 8),
-                    # 'c_7_bot': (8, 1),  # FEU 8 excluded from run
-                    # 'c_7_top': (8, 2),
-                    # 'c_8_bot': (8, 3),
-                    # 'c_8_top': (8, 4),
-                    # 'c_9_bot': (8, 5),
-                    # 'c_9_top': (8, 6),
-                    # 'c_10_bot': (8, 7),
-                    # 'c_10_top': (8, 8),
+                    # 'c_1_bot': None,  # connector 1 disconnected from detector
+                    # 'c_1_top': None,
+                    'c_2_bot': (6, 5),
+                    'c_2_top': (6, 6),
+                    'c_3_bot': (6, 7),
+                    'c_3_top': (6, 8),
+                    'c_4_bot': (7, 1),
+                    'c_4_top': (7, 2),
+                    'c_5_bot': (7, 3),
+                    'c_5_top': (7, 4),
+                    'c_6_bot': (7, 5),
+                    'c_6_top': (7, 6),
+                    'c_7_bot': (7, 7),
+                    'c_7_top': (7, 8),
+                    # 'c_8_bot': (8, 1),  # FEU 8 excluded from run
+                    # 'c_8_top': (8, 2),
+                    # 'c_9_bot': (8, 3),
+                    # 'c_9_top': (8, 4),
+                    # 'c_10_bot': (8, 5),
+                    # 'c_10_top': (8, 6),
                 },
                 'dream_feu_orientation': {  # If connector is normal, inverted, rotated, or rotated_inverted
-                    'c_1_bot': 'rotated_inverted',
-                    'c_1_top': 'rotated_inverted',
                     'c_2_bot': 'rotated_inverted',
                     'c_2_top': 'rotated_inverted',
                     'c_3_bot': 'rotated_inverted',
@@ -556,9 +558,9 @@ class Config:
                     'c_5_top': 'rotated_inverted',
                     'c_6_bot': 'rotated_inverted',
                     'c_6_top': 'rotated_inverted',
-                    # 'c_7_bot': 'rotated_inverted',  # FEU 8 excluded from run
-                    # 'c_7_top': 'rotated_inverted',
-                    # 'c_8_bot': 'rotated_inverted',
+                    'c_7_bot': 'rotated_inverted',
+                    'c_7_top': 'rotated_inverted',
+                    # 'c_8_bot': 'rotated_inverted',  # FEU 8 excluded from run
                     # 'c_8_top': 'rotated_inverted',
                     # 'c_9_bot': 'rotated_inverted',
                     # 'c_9_top': 'rotated_inverted',
