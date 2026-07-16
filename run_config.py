@@ -37,14 +37,13 @@ class Config:
         # self.run_name = 'p2_det1_long_run_7-7-26'
         # self.run_name = 'p2_det1_det2_long_run_mesh_scan_7-9-26'
         # self.run_name = 'p2_det3_det4_long_run_drift_mesh_scan_7-15-26'
-        self.run_name = 'p2_det4_long_run_drift_mesh_scan_7-15-26'
+        # self.run_name = 'p2_det4_long_run_drift_mesh_scan_7-15-26'
+        self.run_name = 'p2_det3_det4_drift_scan_7-16-26'
 
-        # det3 (P2_3) was sparking a lot on 7-15-26, so it is excluded from this run.
-        # When it is ready (tomorrow), set run_det3 = True and update run_name — the
-        # det3 subrun plan (long run + drift scan + mesh scan values) is kept below
-        # and re-activates automatically. Remember to take a fresh pedestal run after
-        # flipping this, so the pedestals include FEUs 6/7 again.
-        self.run_det3 = False
+        # det3 (P2_3) was sparking on 7-15-26 and excluded; re-included 7-16-26.
+        # A fresh pedestal run was needed after flipping this back on, so the
+        # pedestals include FEUs 6/7 again (run_config_pedestals.py).
+        self.run_det3 = True
         # self.data_out_dir = '/mnt/cosmic_data/Run/'
         # self.data_out_dir = '/data/cosmic_data/Run_MX/'
         self.base_out_dir = BASE_DATA_DIR
@@ -137,32 +136,26 @@ class Config:
         default_drift, default_resist = 1000, 490  # V
 
         # ---------------------------------------------------------------------
-        # P2_4 run, 7-15-26 (det4 on p1_z; det3/P2_3 sparking, excluded via
-        # self.run_det3 — its plan below re-activates when the flag is True):
-        #   1) 12 h long run for efficiency at the operating point:
-        #      det4 (mesh, drift) = (480, 700) [det3 (420, 600) when included].
-        #   2) Drift scan: mesh held at its operating value, drift stepped
-        #      down 50 V per point, 30 min subruns, stopping at the last point
-        #      where the drift gap (drift - mesh) is still positive:
-        #      det4 700 -> 500 V (5 points, gap 220 -> 20 V)
-        #      [det3 600 -> 450 V, 4 points, gap 180 -> 30 V; holds its last
-        #      point while det4 finishes when both are included].
-        #   3) Mesh HV scan: start at the operating point and step the mesh
-        #      down in 5 V intervals, 30 min subruns, 16 points (8 h):
-        #      det4 480 -> 405 V [det3 420 -> 345 V]. The drift is stepped
-        #      down by the same amount at each point — the potential across
-        #      the drift gap is drift - mesh, so this keeps the drift gap
-        #      fixed (det4: 220 V, det3: 180 V).
-        # Total: 12 + 2.5 + 8 = 22.5 h.
-        # Pedestals: dedicated 200 V pedestal run taken beforehand via
-        # run_config_pedestals.py, reused by all subruns ('latest' +
-        # do_pedestal_threshold_run off).
+        # P2_3 + P2_4 drift scan, 7-16-26 (det4 on p1_z, det3 on p2_z):
+        #   Mesh held at the operating point throughout:
+        #     det4 mesh = 450 V, det3 mesh = 420 V.
+        #   Drift stepped UP from the mesh voltage (drift gap = drift - mesh
+        #   starts at 0) to 900 V in 50 V steps, 30 min per point:
+        #     det4: 450 -> 900 V (10 points, gap 0 -> 450 V)
+        #     det3: 420 -> 870 V, plus a final point at 900 V (11 points,
+        #           gap 0 -> 480 V). det4 holds its last point (900 V) while
+        #           det3 takes its extra point.
+        # Total: 11 x 30 min = 5.5 h.
+        # Pedestals: det3 re-included -> FEUs 6/7 active again, so take a
+        # fresh dedicated 200 V pedestal run FIRST via run_config_pedestals.py;
+        # all subruns then reuse it ('latest' + do_pedestal_threshold_run off).
         # M3 telescope (cards 0/3 ch 8-11, drift 500 / mesh 455) held at its
         # usual operating point throughout.
         # P2_4 HV: mesh (1, 0), drift (1, 1). P2_3 HV: mesh (1, 2), drift (1, 3).
         # HV is powered off automatically at the end via power_off_hv_at_end.
-        det4_mesh_op, det4_drift_op = 480, 700  # V, P2_4 operating point
-        det3_mesh_op, det3_drift_op = 420, 600  # V, P2_3 operating point
+        det4_mesh_op = 450  # V, P2_4 mesh operating point
+        det3_mesh_op = 420  # V, P2_3 mesh operating point
+        drift_max, drift_step = 900, 50  # V
 
         def p2_hvs(det4_mesh, det4_drift, det3_mesh, det3_drift):
             hvs = {
@@ -194,24 +187,16 @@ class Config:
                 name += f'_det3_{det3_mesh}_{det3_drift}'
             return name
 
-        new_subrun = {
-            'sub_run_name': subrun_name('long_run', det4_mesh_op, det4_drift_op, det3_mesh_op, det3_drift_op),
-            'run_time': 12 * 60,  # Minutes
-            'hvs': p2_hvs(det4_mesh_op, det4_drift_op, det3_mesh_op, det3_drift_op),
-        }
-        self.sub_runs.append(new_subrun)
-
-        def drift_scan_points(mesh_v, drift_op, step_v=50):
-            """Drift values stepping down by step_v, only while the drift gap (drift - mesh) stays positive."""
-            points = []
-            drift_v = drift_op
-            while drift_v > mesh_v:
-                points.append(drift_v)
-                drift_v -= step_v
+        def drift_scan_points(mesh_v, max_v=drift_max, step_v=drift_step):
+            """Drift values stepping up by step_v from the mesh voltage (drift gap 0) to max_v,
+            with a final point at max_v if the steps don't land on it exactly."""
+            points = list(range(mesh_v, max_v + 1, step_v))
+            if points[-1] != max_v:
+                points.append(max_v)
             return points
 
-        det4_drift_points = drift_scan_points(det4_mesh_op, det4_drift_op)  # 700 -> 500 V
-        det3_drift_points = drift_scan_points(det3_mesh_op, det3_drift_op)  # 600 -> 450 V
+        det4_drift_points = drift_scan_points(det4_mesh_op)  # 450 -> 900 V, 10 points
+        det3_drift_points = drift_scan_points(det3_mesh_op)  # 420 -> 870 V + 900 V, 11 points
         n_drift_points = len(det4_drift_points)
         if self.run_det3:
             n_drift_points = max(n_drift_points, len(det3_drift_points))
@@ -222,18 +207,6 @@ class Config:
                 'sub_run_name': subrun_name('drift_scan', det4_mesh_op, det4_drift, det3_mesh_op, det3_drift),
                 'run_time': 30,  # Minutes
                 'hvs': p2_hvs(det4_mesh_op, det4_drift, det3_mesh_op, det3_drift),
-            }
-            self.sub_runs.append(new_subrun)
-
-        for step in range(16):  # 16 x 30 min = 8 h mesh scan
-            det4_mesh = det4_mesh_op - 5 * step  # 480 -> 405 V
-            det3_mesh = det3_mesh_op - 5 * step  # 420 -> 345 V
-            det4_drift = det4_drift_op - 5 * step  # drift steps with mesh: drift gap fixed
-            det3_drift = det3_drift_op - 5 * step
-            new_subrun = {
-                'sub_run_name': subrun_name('mesh_scan', det4_mesh, det4_drift, det3_mesh, det3_drift),
-                'run_time': 30,  # Minutes
-                'hvs': p2_hvs(det4_mesh, det4_drift, det3_mesh, det3_drift),
             }
             self.sub_runs.append(new_subrun)
 
@@ -489,7 +462,7 @@ class Config:
         #                            'm3_bot_bot', 'm3_bot_top', 'm3_top_bot', 'm3_top_top']
         self.included_detectors = ['P2_4',
                                    'm3_bot_bot', 'm3_bot_top', 'm3_top_bot', 'm3_top_top']
-        if self.run_det3:  # P2_3 excluded while sparking; see run_det3 flag at top
+        if self.run_det3:  # P2_3 added here when run_det3 is True (as it is now, 7-16-26)
             self.included_detectors = ['P2_3'] + self.included_detectors
         # self.included_detectors = ['clas12_test',
         #                                    'm3_bot_bot', 'm3_bot_top', 'm3_top_bot', 'm3_top_top']
@@ -652,8 +625,9 @@ class Config:
                     'drift': (1, 3),
                     'mesh': (1, 2),
                 },
-                # Connectors 1 and 10 disconnected from the detector; connectors 2-9 go
-                # incrementally to FEU 6 (1-8) then FEU 7 (1-8).
+                # Connectors 1 and 10 disconnected from the detector; connectors 8 and 9
+                # additionally disconnected 7-16-26. Connectors 2-7 go incrementally to
+                # FEU 6 (1-8) then FEU 7 (1-4).
                 'dream_feus': {
                     # 'c_1_bot': None,  # connector 1 disconnected from detector
                     # 'c_1_top': None,
@@ -669,10 +643,10 @@ class Config:
                     'c_6_top': (7, 2),
                     'c_7_bot': (7, 3),
                     'c_7_top': (7, 4),
-                    'c_8_bot': (7, 5),
-                    'c_8_top': (7, 6),
-                    'c_9_bot': (7, 7),
-                    'c_9_top': (7, 8),
+                    # 'c_8_bot': (7, 5),  # connector 8 disconnected from detector 7-16-26
+                    # 'c_8_top': (7, 6),
+                    # 'c_9_bot': (7, 7),  # connector 9 disconnected from detector 7-16-26
+                    # 'c_9_top': (7, 8),
                     # 'c_10_bot': None,  # connector 10 disconnected from detector
                     # 'c_10_top': None,
                 },
@@ -689,10 +663,10 @@ class Config:
                     'c_6_top': 'rotated_inverted',
                     'c_7_bot': 'rotated_inverted',
                     'c_7_top': 'rotated_inverted',
-                    'c_8_bot': 'rotated_inverted',
-                    'c_8_top': 'rotated_inverted',
-                    'c_9_bot': 'rotated_inverted',
-                    'c_9_top': 'rotated_inverted',
+                    # 'c_8_bot': 'rotated_inverted',  # connector 8 disconnected 7-16-26
+                    # 'c_8_top': 'rotated_inverted',
+                    # 'c_9_bot': 'rotated_inverted',  # connector 9 disconnected 7-16-26
+                    # 'c_9_top': 'rotated_inverted',
                 },
             },
             {
@@ -715,14 +689,15 @@ class Config:
                     'drift': (1, 1),
                     'mesh': (1, 0),
                 },
-                # Connectors 1 and 10 disconnected from the detector; connectors 2-9 go
-                # incrementally to FEU 3 (1-8) then FEU 4 (1-8).
+                # Connectors 1 and 10 disconnected from the detector; connector 2
+                # additionally disconnected 7-16-26. Connectors 3-9 go incrementally to
+                # FEU 3 (3-8) then FEU 4 (1-8).
                 'dream_feus': {
                     # 'c_1_bot': None,  # connector 1 disconnected from detector
                     # 'c_1_top': None,
-                    'c_2_bot': (3, 1),  # Runs along x direction, indicates y hit location
-                    'c_2_top': (3, 2),
-                    'c_3_bot': (3, 3),
+                    # 'c_2_bot': (3, 1),  # connector 2 disconnected from detector 7-16-26
+                    # 'c_2_top': (3, 2),
+                    'c_3_bot': (3, 3),  # Runs along x direction, indicates y hit location
                     'c_3_top': (3, 4),
                     'c_4_bot': (3, 5),
                     'c_4_top': (3, 6),
@@ -740,8 +715,8 @@ class Config:
                     # 'c_10_top': None,
                 },
                 'dream_feu_orientation': {  # If connector is normal, inverted, rotated, or rotated_inverted
-                    'c_2_bot': 'rotated_inverted',
-                    'c_2_top': 'rotated_inverted',
+                    # 'c_2_bot': 'rotated_inverted',  # connector 2 disconnected 7-16-26
+                    # 'c_2_top': 'rotated_inverted',
                     'c_3_bot': 'rotated_inverted',
                     'c_3_top': 'rotated_inverted',
                     'c_4_bot': 'rotated_inverted',
