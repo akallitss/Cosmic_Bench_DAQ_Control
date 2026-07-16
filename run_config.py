@@ -38,12 +38,8 @@ class Config:
         # self.run_name = 'p2_det1_det2_long_run_mesh_scan_7-9-26'
         # self.run_name = 'p2_det3_det4_long_run_drift_mesh_scan_7-15-26'
         # self.run_name = 'p2_det4_long_run_drift_mesh_scan_7-15-26'
-        self.run_name = 'p2_det3_det4_drift_scan_7-16-26'
-
-        # det3 (P2_3) was sparking on 7-15-26 and excluded; re-included 7-16-26.
-        # A fresh pedestal run was needed after flipping this back on, so the
-        # pedestals include FEUs 6/7 again (run_config_pedestals.py).
-        self.run_det3 = True
+        # self.run_name = 'p2_det3_det4_drift_scan_7-16-26'
+        self.run_name = 'p2_det3_mesh_scan_det4_initial_7-16-26'
         # self.data_out_dir = '/mnt/cosmic_data/Run/'
         # self.data_out_dir = '/data/cosmic_data/Run_MX/'
         self.base_out_dir = BASE_DATA_DIR
@@ -136,29 +132,36 @@ class Config:
         default_drift, default_resist = 1000, 490  # V
 
         # ---------------------------------------------------------------------
-        # P2_3 + P2_4 drift scan, 7-16-26 (det4 on p1_z, det3 on p2_z):
-        #   Mesh held at the operating point throughout:
-        #     det4 mesh = 450 V, det3 mesh = 420 V.
-        #   Drift stepped UP from the mesh voltage (drift gap = drift - mesh
-        #   starts at 0) to 900 V in 50 V steps, 30 min per point:
-        #     det4: 450 -> 900 V (10 points, gap 0 -> 450 V)
-        #     det3: 420 -> 870 V, plus a final point at 900 V (11 points,
-        #           gap 0 -> 480 V). det4 holds its last point (900 V) while
-        #           det3 takes its extra point.
-        # Total: 11 x 30 min = 5.5 h.
-        # Pedestals: det3 re-included -> FEUs 6/7 active again, so take a
-        # fresh dedicated 200 V pedestal run FIRST via run_config_pedestals.py;
-        # all subruns then reuse it ('latest' + do_pedestal_threshold_run off).
+        # P2_3 mesh scan + P2_4 initial test, 7-16-26 evening (det4 on p1_z,
+        # det3 on p2_z; det4 grounding re-soldered after the afternoon drift
+        # scan showed a suspect connection):
+        #   1) 2 h initial run at operating voltage, both detectors on:
+        #      det3 (mesh, drift) = (420, 820), det4 (mesh, drift) = (430, 830).
+        #   2) Mesh HV scan, det3 ONLY (det4 HV powered off — hvs value 0 makes
+        #      hv_control turn the channel off): start at the operating point
+        #      and step the mesh down in 5 V intervals, 30 min subruns,
+        #      16 points (8 h): mesh 420 -> 345 V. The drift is stepped down
+        #      by the same amount at each point — the potential across the
+        #      drift gap is drift - mesh, so the drift gap stays fixed at
+        #      400 V (drift 820 -> 745 V).
+        #   3) Final long run at the det3 operating point (420, 820), det4
+        #      still off. run_time set to 24 h — stopped manually with
+        #      bash_scripts/stop_run.sh whenever done.
+        # Total: 2 + 8 h + manual-stop final run.
+        # Pedestals: det4 grounding changed -> noise baseline may have moved,
+        # so take a fresh dedicated 200 V pedestal run FIRST via
+        # run_config_pedestals.py; all subruns then reuse it ('latest' +
+        # do_pedestal_threshold_run off).
         # M3 telescope (cards 0/3 ch 8-11, drift 500 / mesh 455) held at its
         # usual operating point throughout.
         # P2_4 HV: mesh (1, 0), drift (1, 1). P2_3 HV: mesh (1, 2), drift (1, 3).
         # HV is powered off automatically at the end via power_off_hv_at_end.
-        det4_mesh_op = 450  # V, P2_4 mesh operating point
-        det3_mesh_op = 420  # V, P2_3 mesh operating point
-        drift_max, drift_step = 900, 50  # V
+        det3_mesh_op, det3_drift_op = 420, 820  # V, P2_3 operating point
+        det4_mesh_op, det4_drift_op = 430, 830  # V, P2_4 initial run only, then off
 
-        def p2_hvs(det4_mesh, det4_drift, det3_mesh, det3_drift):
-            hvs = {
+        def p2_hvs(det3_mesh, det3_drift, det4_mesh=0, det4_drift=0):
+            """det4 defaults to 0 -> hv_control powers those channels off."""
+            return {
                 0: {
                     8: 500,  # M3
                     9: 500,  # M3
@@ -168,6 +171,8 @@ class Config:
                 1: {
                     0: det4_mesh,   # P2_4 mesh
                     1: det4_drift,  # P2_4 drift
+                    2: det3_mesh,   # P2_3 mesh
+                    3: det3_drift,  # P2_3 drift
                 },
                 3: {
                     8: 455,  # M3
@@ -176,39 +181,30 @@ class Config:
                     11: 455,  # M3
                 },
             }
-            if self.run_det3:
-                hvs[1][2] = det3_mesh   # P2_3 mesh
-                hvs[1][3] = det3_drift  # P2_3 drift
-            return hvs
 
-        def subrun_name(prefix, det4_mesh, det4_drift, det3_mesh, det3_drift):
-            name = f'{prefix}_det4_{det4_mesh}_{det4_drift}'
-            if self.run_det3:
-                name += f'_det3_{det3_mesh}_{det3_drift}'
-            return name
+        new_subrun = {
+            'sub_run_name': f'initial_run_det3_{det3_mesh_op}_{det3_drift_op}_det4_{det4_mesh_op}_{det4_drift_op}',
+            'run_time': 2 * 60,  # Minutes
+            'hvs': p2_hvs(det3_mesh_op, det3_drift_op, det4_mesh_op, det4_drift_op),
+        }
+        self.sub_runs.append(new_subrun)
 
-        def drift_scan_points(mesh_v, max_v=drift_max, step_v=drift_step):
-            """Drift values stepping up by step_v from the mesh voltage (drift gap 0) to max_v,
-            with a final point at max_v if the steps don't land on it exactly."""
-            points = list(range(mesh_v, max_v + 1, step_v))
-            if points[-1] != max_v:
-                points.append(max_v)
-            return points
-
-        det4_drift_points = drift_scan_points(det4_mesh_op)  # 450 -> 900 V, 10 points
-        det3_drift_points = drift_scan_points(det3_mesh_op)  # 420 -> 870 V + 900 V, 11 points
-        n_drift_points = len(det4_drift_points)
-        if self.run_det3:
-            n_drift_points = max(n_drift_points, len(det3_drift_points))
-        for step in range(n_drift_points):  # 30 min per point, mesh fixed at op
-            det4_drift = det4_drift_points[min(step, len(det4_drift_points) - 1)]
-            det3_drift = det3_drift_points[min(step, len(det3_drift_points) - 1)]
+        for step in range(16):  # 16 x 30 min = 8 h mesh scan, det3 only
+            det3_mesh = det3_mesh_op - 5 * step  # 420 -> 345 V
+            det3_drift = det3_drift_op - 5 * step  # drift steps with mesh: drift gap fixed at 400 V
             new_subrun = {
-                'sub_run_name': subrun_name('drift_scan', det4_mesh_op, det4_drift, det3_mesh_op, det3_drift),
+                'sub_run_name': f'mesh_scan_det3_{det3_mesh}_{det3_drift}',
                 'run_time': 30,  # Minutes
-                'hvs': p2_hvs(det4_mesh_op, det4_drift, det3_mesh_op, det3_drift),
+                'hvs': p2_hvs(det3_mesh, det3_drift),
             }
             self.sub_runs.append(new_subrun)
+
+        new_subrun = {
+            'sub_run_name': f'final_run_det3_{det3_mesh_op}_{det3_drift_op}',
+            'run_time': 24 * 60,  # Minutes — stopped manually with bash_scripts/stop_run.sh
+            'hvs': p2_hvs(det3_mesh_op, det3_drift_op),
+        }
+        self.sub_runs.append(new_subrun)
 
 
         # new_subrun = {
@@ -460,10 +456,10 @@ class Config:
                                 #    'm3_bot_bot', 'm3_bot_top', 'm3_top_bot', 'm3_top_top']
         # self.included_detectors = ['P2_1', 'P2_2',
         #                            'm3_bot_bot', 'm3_bot_top', 'm3_top_bot', 'm3_top_top']
-        self.included_detectors = ['P2_4',
+        # P2_4 stays in the readout for the whole run (FEUs 3/4 active) but its HV
+        # is only on for the initial subrun — afterwards its channels record noise.
+        self.included_detectors = ['P2_3', 'P2_4',
                                    'm3_bot_bot', 'm3_bot_top', 'm3_top_bot', 'm3_top_top']
-        if self.run_det3:  # P2_3 added here when run_det3 is True (as it is now, 7-16-26)
-            self.included_detectors = ['P2_3'] + self.included_detectors
         # self.included_detectors = ['clas12_test',
         #                                    'm3_bot_bot', 'm3_bot_top', 'm3_top_bot', 'm3_top_top']
 
