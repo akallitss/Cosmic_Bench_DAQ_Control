@@ -577,7 +577,8 @@ def _decode_file(fdf_path: str, root_path: str, decode_exe: str, cpp_env):
 
 def _analyze_file(root_path: str, ped_dir: str, hits_out_path: str, analyze_exe: str, cpp_env,
                   common_noise_subtraction: bool = True):
-    feu_match = re.search(r'_(\d{3})_(\d{2})', os.path.basename(root_path))
+    # anchored to the tail: run names like det3_420_820 must not match
+    feu_match = re.search(r'_(\d{3})_(\d{2})\.root$', os.path.basename(root_path))
     if not feu_match:
         print(f"[analyze] Cannot extract FEU number from {root_path}, skipping")
         return
@@ -586,7 +587,7 @@ def _analyze_file(root_path: str, ped_dir: str, hits_out_path: str, analyze_exe:
     ped_path = ''
     if ped_dir and os.path.isdir(ped_dir):
         for f in os.listdir(ped_dir):
-            m = re.search(r'_(\d{3})_(\d{2})', f)
+            m = re.search(r'_(\d{3})_(\d{2})\.root$', f)
             if m and int(m.group(2)) == feu_num and '_pedthr_' in f and f.endswith('.root'):
                 ped_path = os.path.join(ped_dir, f)
                 break
