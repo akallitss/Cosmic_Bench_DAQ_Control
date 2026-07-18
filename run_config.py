@@ -39,7 +39,8 @@ class Config:
         # self.run_name = 'p2_det3_det4_long_run_drift_mesh_scan_7-15-26'
         # self.run_name = 'p2_det4_long_run_drift_mesh_scan_7-15-26'
         # self.run_name = 'p2_det3_det4_drift_scan_7-16-26'
-        self.run_name = 'p2_det3_mesh_scan_det4_initial_7-16-26'
+        # self.run_name = 'p2_det3_mesh_scan_det4_initial_7-16-26'
+        self.run_name = 'p2_det1_long_run_mesh_scan_7-19-26'
         # self.data_out_dir = '/mnt/cosmic_data/Run/'
         # self.data_out_dir = '/data/cosmic_data/Run_MX/'
         self.base_out_dir = BASE_DATA_DIR
@@ -132,35 +133,33 @@ class Config:
         default_drift, default_resist = 1000, 490  # V
 
         # ---------------------------------------------------------------------
-        # P2_3 mesh scan + P2_4 initial test, 7-16-26 evening (det4 on p1_z,
-        # det3 on p2_z; det4 grounding re-soldered after the afternoon drift
-        # scan showed a suspect connection):
-        #   1) 2 h initial run at operating voltage, both detectors on:
-        #      det3 (mesh, drift) = (420, 820), det4 (mesh, drift) = (430, 830).
-        #   2) Mesh HV scan, det3 ONLY (det4 HV powered off — hvs value 0 makes
-        #      hv_control turn the channel off): start at the operating point
-        #      and step the mesh down in 5 V intervals, 30 min subruns,
-        #      16 points (8 h): mesh 420 -> 345 V. The drift is stepped down
-        #      by the same amount at each point — the potential across the
-        #      drift gap is drift - mesh, so the drift gap stays fixed at
-        #      400 V (drift 820 -> 745 V).
-        #   3) Final long run at the det3 operating point (420, 820), det4
-        #      still off. run_time set to 24 h — stopped manually with
-        #      bash_scripts/stop_run.sh whenever done.
+        # P2_1 alignment + mesh scan + long run, 7-19-26 (det1 on p2_z, moved
+        # from the p1 shelf; det4 on p1_z is DEAD — excluded from the readout
+        # (FEUs 3/4 off) and its HV channels held at 0 the whole run):
+        #   1) 2 h initial run for alignment at the det1 operating point
+        #      (mesh, drift) = (430, 740).
+        #   2) Mesh HV scan: start at the operating point and step the mesh
+        #      down in 5 V intervals, 30 min subruns, 16 points (8 h):
+        #      mesh 430 -> 355 V. The drift is stepped down by the same amount
+        #      at each point — the potential across the drift gap is
+        #      drift - mesh, so the drift gap stays fixed at 310 V
+        #      (drift 740 -> 665 V).
+        #   3) Final long run at the operating point (430, 740). run_time set
+        #      to 24 h — stopped manually with bash_scripts/stop_run.sh.
         # Total: 2 + 8 h + manual-stop final run.
-        # Pedestals: det4 grounding changed -> noise baseline may have moved,
-        # so take a fresh dedicated 200 V pedestal run FIRST via
-        # run_config_pedestals.py; all subruns then reuse it ('latest' +
+        # Pedestals: FEU set changed since the last run (FEUs 3/4 dropped,
+        # det1 now on 6/7), so take a fresh dedicated 200 V pedestal run FIRST
+        # via run_config_pedestals.py; all subruns then reuse it ('latest' +
         # do_pedestal_threshold_run off).
         # M3 telescope (cards 0/3 ch 8-11, drift 500 / mesh 455) held at its
         # usual operating point throughout.
-        # P2_4 HV: mesh (1, 0), drift (1, 1). P2_3 HV: mesh (1, 2), drift (1, 3).
+        # P2_1 HV: mesh (1, 2), drift (1, 3) — on the p2-shelf HV cables.
+        # P2_4 HV: mesh (1, 0), drift (1, 1) — held at 0 (dead detector).
         # HV is powered off automatically at the end via power_off_hv_at_end.
-        det3_mesh_op, det3_drift_op = 420, 820  # V, P2_3 operating point
-        det4_mesh_op, det4_drift_op = 430, 830  # V, P2_4 initial run only, then off
+        det1_mesh_op, det1_drift_op = 430, 740  # V, P2_1 operating point
 
-        def p2_hvs(det3_mesh, det3_drift, det4_mesh=0, det4_drift=0):
-            """det4 defaults to 0 -> hv_control powers those channels off."""
+        def p2_hvs(det1_mesh, det1_drift):
+            """P2_4 channels fixed at 0 -> hv_control powers them off (det4 dead)."""
             return {
                 0: {
                     8: 500,  # M3
@@ -169,10 +168,10 @@ class Config:
                     11: 500,  # M3
                 },
                 1: {
-                    0: det4_mesh,   # P2_4 mesh
-                    1: det4_drift,  # P2_4 drift
-                    2: det3_mesh,   # P2_3 mesh
-                    3: det3_drift,  # P2_3 drift
+                    0: 0,           # P2_4 mesh — dead, off
+                    1: 0,           # P2_4 drift — dead, off
+                    2: det1_mesh,   # P2_1 mesh
+                    3: det1_drift,  # P2_1 drift
                 },
                 3: {
                     8: 455,  # M3
@@ -183,26 +182,26 @@ class Config:
             }
 
         new_subrun = {
-            'sub_run_name': f'initial_run_det3_{det3_mesh_op}_{det3_drift_op}_det4_{det4_mesh_op}_{det4_drift_op}',
+            'sub_run_name': f'initial_run_det1_{det1_mesh_op}_{det1_drift_op}',
             'run_time': 2 * 60,  # Minutes
-            'hvs': p2_hvs(det3_mesh_op, det3_drift_op, det4_mesh_op, det4_drift_op),
+            'hvs': p2_hvs(det1_mesh_op, det1_drift_op),
         }
         self.sub_runs.append(new_subrun)
 
-        for step in range(16):  # 16 x 30 min = 8 h mesh scan, det3 only
-            det3_mesh = det3_mesh_op - 5 * step  # 420 -> 345 V
-            det3_drift = det3_drift_op - 5 * step  # drift steps with mesh: drift gap fixed at 400 V
+        for step in range(16):  # 16 x 30 min = 8 h mesh scan
+            det1_mesh = det1_mesh_op - 5 * step  # 430 -> 355 V
+            det1_drift = det1_drift_op - 5 * step  # drift steps with mesh: drift gap fixed at 310 V
             new_subrun = {
-                'sub_run_name': f'mesh_scan_det3_{det3_mesh}_{det3_drift}',
+                'sub_run_name': f'mesh_scan_det1_{det1_mesh}_{det1_drift}',
                 'run_time': 30,  # Minutes
-                'hvs': p2_hvs(det3_mesh, det3_drift),
+                'hvs': p2_hvs(det1_mesh, det1_drift),
             }
             self.sub_runs.append(new_subrun)
 
         new_subrun = {
-            'sub_run_name': f'final_run_det3_{det3_mesh_op}_{det3_drift_op}',
+            'sub_run_name': f'final_run_det1_{det1_mesh_op}_{det1_drift_op}',
             'run_time': 24 * 60,  # Minutes — stopped manually with bash_scripts/stop_run.sh
-            'hvs': p2_hvs(det3_mesh_op, det3_drift_op),
+            'hvs': p2_hvs(det1_mesh_op, det1_drift_op),
         }
         self.sub_runs.append(new_subrun)
 
@@ -456,9 +455,11 @@ class Config:
                                 #    'm3_bot_bot', 'm3_bot_top', 'm3_top_bot', 'm3_top_top']
         # self.included_detectors = ['P2_1', 'P2_2',
         #                            'm3_bot_bot', 'm3_bot_top', 'm3_top_bot', 'm3_top_top']
-        # P2_4 stays in the readout for the whole run (FEUs 3/4 active) but its HV
-        # is only on for the initial subrun — afterwards its channels record noise.
-        self.included_detectors = ['P2_3', 'P2_4',
+        # self.included_detectors = ['P2_3', 'P2_4',
+        #                            'm3_bot_bot', 'm3_bot_top', 'm3_top_bot', 'm3_top_top']
+        # P2_4 (FEUs 3/4) is dead — excluded from the readout entirely; its HV
+        # channels are held at 0 in every subrun's hvs map.
+        self.included_detectors = ['P2_1',
                                    'm3_bot_bot', 'm3_bot_top', 'm3_top_bot', 'm3_top_top']
         # self.included_detectors = ['clas12_test',
         #                                    'm3_bot_bot', 'm3_bot_top', 'm3_top_bot', 'm3_top_top']
@@ -473,43 +474,43 @@ class Config:
                 'det_center_coords': {  # Center of detector
                     'x': 0,  # mm
                     'y': 0,  # mm
-                    'z': self.bench_geometry['p1_z'] + self.bench_geometry['board_thickness'],  # mm
+                    'z': self.bench_geometry['p2_z'] + self.bench_geometry['board_thickness'],  # mm  moved to p2 shelf 7-19-26
                 },
                 'det_orientation': {
                     'x': 0,  # deg  Rotation about x axis
                     'y': 0,  # deg  Rotation about y axis
                     'z': 0,  # deg  Rotation about z axis
                 },
+                # On the p2-shelf HV cables since 7-19-26 (was (1, 0)/(1, 1) on the p1 shelf).
                 'hv_channels': {
-                    'drift': (1, 1),
-                    'mesh': (1, 0),
+                    'drift': (1, 3),
+                    'mesh': (1, 2),
                 },
+                # Recabled 7-19-26 on the p2 shelf: connectors 1 and 10 disconnected,
+                # connectors 2-9 go incrementally to FEU 6 (1-8) then FEU 7 (1-8).
                 'dream_feus': {
-                    'c_1_bot': (3, 1),  # Runs along x direction, indicates y hit location
-                    'c_1_top': (3, 2),
-                    'c_2_bot': (3, 3),
-                    'c_2_top': (3, 4),
-                    'c_3_bot': (3, 5),
-                    'c_3_top': (3, 6),
-                    'c_4_bot': (3, 7),
-                    'c_4_top': (3, 8),
-                    'c_5_bot': (4, 1),  # Runs along y direction, indicates x hit location
-                    'c_5_tob': (4, 2),
-                    'c_6_bot': (4, 3),
-                    'c_6_top': (4, 4),
-                    'c_7_bot': (4, 5),
-                    'c_7_top': (4, 6),
-                    'c_8_bot': (4, 7),
-                    'c_8_top': (4, 8),
-                    'c_9_bot': (6, 1),  # Runs along y direction, indicates x hit location
-                    'c_9_top': (6, 2),
-                    'c_10_bot': (6, 3),
-                    'c_10_top': (6, 4),
-
+                    # 'c_1_bot': None,  # connector 1 disconnected
+                    # 'c_1_top': None,
+                    'c_2_bot': (6, 1),  # Runs along x direction, indicates y hit location
+                    'c_2_top': (6, 2),
+                    'c_3_bot': (6, 3),
+                    'c_3_top': (6, 4),
+                    'c_4_bot': (6, 5),
+                    'c_4_top': (6, 6),
+                    'c_5_bot': (6, 7),  # Runs along y direction, indicates x hit location
+                    'c_5_top': (6, 8),
+                    'c_6_bot': (7, 1),
+                    'c_6_top': (7, 2),
+                    'c_7_bot': (7, 3),
+                    'c_7_top': (7, 4),
+                    'c_8_bot': (7, 5),
+                    'c_8_top': (7, 6),
+                    'c_9_bot': (7, 7),
+                    'c_9_top': (7, 8),
+                    # 'c_10_bot': None,  # connector 10 disconnected
+                    # 'c_10_top': None,
                 },
                 'dream_feu_orientation': {  # If connector is normal, inverted, rotated, or rotated_inverted
-                    'c_1_bot': 'rotated_inverted',
-                    'c_1_top': 'rotated_inverted',
                     'c_2_bot': 'rotated_inverted',
                     'c_2_top': 'rotated_inverted',
                     'c_3_bot': 'rotated_inverted',
@@ -517,7 +518,7 @@ class Config:
                     'c_4_bot': 'rotated_inverted',
                     'c_4_top': 'rotated_inverted',
                     'c_5_bot': 'rotated_inverted',
-                    'c_5_tob': 'rotated_inverted',
+                    'c_5_top': 'rotated_inverted',
                     'c_6_bot': 'rotated_inverted',
                     'c_6_top': 'rotated_inverted',
                     'c_7_bot': 'rotated_inverted',
@@ -526,8 +527,6 @@ class Config:
                     'c_8_top': 'rotated_inverted',
                     'c_9_bot': 'rotated_inverted',
                     'c_9_top': 'rotated_inverted',
-                    'c_10_bot': 'rotated_inverted',
-                    'c_10_top': 'rotated_inverted',
                 },
             },
             {
