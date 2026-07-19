@@ -41,7 +41,8 @@ class Config:
         # self.run_name = 'p2_det3_det4_drift_scan_7-16-26'
         # self.run_name = 'p2_det3_mesh_scan_det4_initial_7-16-26'
         # self.run_name = 'p2_det1_long_run_mesh_scan_7-19-26'
-        self.run_name = 'p2_det1_drift_scan_7-19-26'
+        # self.run_name = 'p2_det1_drift_scan_7-19-26'
+        self.run_name = 'p2_det1_long_run_efficiency_7-19-26'
         # self.data_out_dir = '/mnt/cosmic_data/Run/'
         # self.data_out_dir = '/data/cosmic_data/Run_MX/'
         self.base_out_dir = BASE_DATA_DIR
@@ -134,26 +135,24 @@ class Config:
         default_drift, default_resist = 1000, 490  # V
 
         # ---------------------------------------------------------------------
-        # P2_1 drift scan, 7-19-26 (det1 on p2_z; det4 on p1_z is DEAD —
-        # excluded from the readout (FEUs 3/4 off) and its HV channels held at
-        # 0 the whole run):
-        #   Drift HV scan at fixed mesh = 415 V: step the drift up in 50 V
-        #   intervals, 30 min subruns, 12 points (6 h): drift 415 -> 965 V.
-        #   Start at 0 drift-gap potential (drift = mesh = 415 V) and increase
-        #   the gap by 50 V each point — the potential across the drift gap is
-        #   drift - mesh, so it grows 0 -> 550 V.
-        # Total: 6 h, HV powered off automatically at the end
-        # (power_off_hv_at_end).
-        # Pedestals: same FEU set (1, 6, 7) as the 7-19-26 mesh-scan run — if
-        # that run's dedicated 200 V pedestal (pedestals_07-19-26_00-21-00) is
-        # still current (no FEU-set or hardware change), 'latest' reuses it and
-        # no new pedestal run is needed; otherwise take a fresh one first via
-        # run_config_pedestals.py.
+        # P2_1 long efficiency run, 7-19-26 (det1 on p2_z; det4 on p1_z is DEAD
+        # — excluded from the readout (FEUs 3/4 off) and its HV channels held
+        # at 0 the whole run):
+        #   Single long run for efficiency at the fixed operating point
+        #   mesh = 415 V, drift = 615 V (drift-gap potential drift - mesh =
+        #   200 V), held for the whole run. run_time set to 24 h — stopped
+        #   manually with bash_scripts/stop_run.sh whenever done.
+        # HV powered off automatically at the end (power_off_hv_at_end).
+        # Pedestals: take a fresh dedicated 200 V pedestal run FIRST (200 V on
+        # both det1 mesh and drift) via run_config_pedestals.py at the start of
+        # this run; the long run then reuses it via 'latest' (+
+        # do_pedestal_threshold_run off), and the processor copies the pedthr
+        # FDFs into the subrun's raw_daq_data so the hit-builder applies it.
         # M3 telescope (cards 0/3 ch 8-11, drift 500 / mesh 455) held at its
         # usual operating point throughout.
         # P2_1 HV: mesh (1, 2), drift (1, 3) — on the p2-shelf HV cables.
         # P2_4 HV: mesh (1, 0), drift (1, 1) — held at 0 (dead detector).
-        det1_mesh_fixed = 415  # V, P2_1 mesh held fixed for the drift scan
+        det1_mesh_op, det1_drift_op = 415, 615  # V, P2_1 efficiency operating point (gap 200 V)
 
         def p2_hvs(det1_mesh, det1_drift):
             """P2_4 channels fixed at 0 -> hv_control powers them off (det4 dead)."""
@@ -178,14 +177,12 @@ class Config:
                 },
             }
 
-        for step in range(12):  # 12 x 30 min = 6 h drift scan, mesh fixed at 415 V
-            det1_drift = det1_mesh_fixed + 50 * step  # 415 -> 965 V; drift gap 0 -> 550 V
-            new_subrun = {
-                'sub_run_name': f'drift_scan_det1_{det1_mesh_fixed}_{det1_drift}',
-                'run_time': 30,  # Minutes
-                'hvs': p2_hvs(det1_mesh_fixed, det1_drift),
-            }
-            self.sub_runs.append(new_subrun)
+        new_subrun = {
+            'sub_run_name': f'long_run_det1_{det1_mesh_op}_{det1_drift_op}',
+            'run_time': 24 * 60,  # Minutes — stopped manually with bash_scripts/stop_run.sh
+            'hvs': p2_hvs(det1_mesh_op, det1_drift_op),
+        }
+        self.sub_runs.append(new_subrun)
 
 
         # new_subrun = {
