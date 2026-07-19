@@ -40,7 +40,8 @@ class Config:
         # self.run_name = 'p2_det4_long_run_drift_mesh_scan_7-15-26'
         # self.run_name = 'p2_det3_det4_drift_scan_7-16-26'
         # self.run_name = 'p2_det3_mesh_scan_det4_initial_7-16-26'
-        self.run_name = 'p2_det1_long_run_mesh_scan_7-19-26'
+        # self.run_name = 'p2_det1_long_run_mesh_scan_7-19-26'
+        self.run_name = 'p2_det1_drift_scan_7-19-26'
         # self.data_out_dir = '/mnt/cosmic_data/Run/'
         # self.data_out_dir = '/data/cosmic_data/Run_MX/'
         self.base_out_dir = BASE_DATA_DIR
@@ -133,30 +134,26 @@ class Config:
         default_drift, default_resist = 1000, 490  # V
 
         # ---------------------------------------------------------------------
-        # P2_1 alignment + mesh scan + long run, 7-19-26 (det1 on p2_z, moved
-        # from the p1 shelf; det4 on p1_z is DEAD — excluded from the readout
-        # (FEUs 3/4 off) and its HV channels held at 0 the whole run):
-        #   1) 2 h initial run for alignment at the det1 operating point
-        #      (mesh, drift) = (430, 740).
-        #   2) Mesh HV scan: start at the operating point and step the mesh
-        #      down in 5 V intervals, 30 min subruns, 16 points (8 h):
-        #      mesh 430 -> 355 V. The drift is stepped down by the same amount
-        #      at each point — the potential across the drift gap is
-        #      drift - mesh, so the drift gap stays fixed at 310 V
-        #      (drift 740 -> 665 V).
-        #   3) Final long run at the operating point (430, 740). run_time set
-        #      to 24 h — stopped manually with bash_scripts/stop_run.sh.
-        # Total: 2 + 8 h + manual-stop final run.
-        # Pedestals: FEU set changed since the last run (FEUs 3/4 dropped,
-        # det1 now on 6/7), so take a fresh dedicated 200 V pedestal run FIRST
-        # via run_config_pedestals.py; all subruns then reuse it ('latest' +
-        # do_pedestal_threshold_run off).
+        # P2_1 drift scan, 7-19-26 (det1 on p2_z; det4 on p1_z is DEAD —
+        # excluded from the readout (FEUs 3/4 off) and its HV channels held at
+        # 0 the whole run):
+        #   Drift HV scan at fixed mesh = 415 V: step the drift up in 50 V
+        #   intervals, 30 min subruns, 12 points (6 h): drift 415 -> 965 V.
+        #   Start at 0 drift-gap potential (drift = mesh = 415 V) and increase
+        #   the gap by 50 V each point — the potential across the drift gap is
+        #   drift - mesh, so it grows 0 -> 550 V.
+        # Total: 6 h, HV powered off automatically at the end
+        # (power_off_hv_at_end).
+        # Pedestals: same FEU set (1, 6, 7) as the 7-19-26 mesh-scan run — if
+        # that run's dedicated 200 V pedestal (pedestals_07-19-26_00-21-00) is
+        # still current (no FEU-set or hardware change), 'latest' reuses it and
+        # no new pedestal run is needed; otherwise take a fresh one first via
+        # run_config_pedestals.py.
         # M3 telescope (cards 0/3 ch 8-11, drift 500 / mesh 455) held at its
         # usual operating point throughout.
         # P2_1 HV: mesh (1, 2), drift (1, 3) — on the p2-shelf HV cables.
         # P2_4 HV: mesh (1, 0), drift (1, 1) — held at 0 (dead detector).
-        # HV is powered off automatically at the end via power_off_hv_at_end.
-        det1_mesh_op, det1_drift_op = 430, 740  # V, P2_1 operating point
+        det1_mesh_fixed = 415  # V, P2_1 mesh held fixed for the drift scan
 
         def p2_hvs(det1_mesh, det1_drift):
             """P2_4 channels fixed at 0 -> hv_control powers them off (det4 dead)."""
@@ -181,29 +178,14 @@ class Config:
                 },
             }
 
-        new_subrun = {
-            'sub_run_name': f'initial_run_det1_{det1_mesh_op}_{det1_drift_op}',
-            'run_time': 2 * 60,  # Minutes
-            'hvs': p2_hvs(det1_mesh_op, det1_drift_op),
-        }
-        self.sub_runs.append(new_subrun)
-
-        for step in range(16):  # 16 x 30 min = 8 h mesh scan
-            det1_mesh = det1_mesh_op - 5 * step  # 430 -> 355 V
-            det1_drift = det1_drift_op - 5 * step  # drift steps with mesh: drift gap fixed at 310 V
+        for step in range(12):  # 12 x 30 min = 6 h drift scan, mesh fixed at 415 V
+            det1_drift = det1_mesh_fixed + 50 * step  # 415 -> 965 V; drift gap 0 -> 550 V
             new_subrun = {
-                'sub_run_name': f'mesh_scan_det1_{det1_mesh}_{det1_drift}',
+                'sub_run_name': f'drift_scan_det1_{det1_mesh_fixed}_{det1_drift}',
                 'run_time': 30,  # Minutes
-                'hvs': p2_hvs(det1_mesh, det1_drift),
+                'hvs': p2_hvs(det1_mesh_fixed, det1_drift),
             }
             self.sub_runs.append(new_subrun)
-
-        new_subrun = {
-            'sub_run_name': f'final_run_det1_{det1_mesh_op}_{det1_drift_op}',
-            'run_time': 24 * 60,  # Minutes — stopped manually with bash_scripts/stop_run.sh
-            'hvs': p2_hvs(det1_mesh_op, det1_drift_op),
-        }
-        self.sub_runs.append(new_subrun)
 
 
         # new_subrun = {
