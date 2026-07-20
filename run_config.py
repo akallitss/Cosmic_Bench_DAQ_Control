@@ -10,6 +10,7 @@ Created as Cosmic_Bench_DAQ_Control/run_config_template.py
 
 import json
 import copy
+from datetime import datetime, timedelta
 
 # ---------------------------------------------------------------------------
 # Site configuration — edit here or use the Flask GUI to switch projects
@@ -42,7 +43,8 @@ class Config:
         # self.run_name = 'p2_det3_mesh_scan_det4_initial_7-16-26'
         # self.run_name = 'p2_det1_long_run_mesh_scan_7-19-26'
         # self.run_name = 'p2_det1_drift_scan_7-19-26'
-        self.run_name = 'p2_det1_long_run_efficiency_7-19-26'
+        # self.run_name = 'p2_det1_long_run_efficiency_7-19-26'
+        self.run_name = 'p2_det4_long_run_7-20-26'
         # self.data_out_dir = '/mnt/cosmic_data/Run/'
         # self.data_out_dir = '/data/cosmic_data/Run_MX/'
         self.base_out_dir = BASE_DATA_DIR
@@ -135,27 +137,38 @@ class Config:
         default_drift, default_resist = 1000, 490  # V
 
         # ---------------------------------------------------------------------
-        # P2_1 long efficiency run, 7-19-26 (det1 on p2_z; det4 on p1_z is DEAD
-        # — excluded from the readout (FEUs 3/4 off) and its HV channels held
-        # at 0 the whole run):
-        #   Single long run for efficiency at the fixed operating point
-        #   mesh = 415 V, drift = 615 V (drift-gap potential drift - mesh =
-        #   200 V), held for the whole run. run_time set to 24 h — stopped
-        #   manually with bash_scripts/stop_run.sh whenever done.
+        # P2_4 long run, 7-20-26 (det4 now on p2_z — the P2 (upper) position;
+        # the only P2 detector in the bench this run. P2_1 removed; its HV
+        # channels (1, 2)/(1, 3) are held at 0):
+        #   Single long run at the fixed operating point mesh = 410 V,
+        #   drift = 610 V (drift-gap potential drift - mesh = 200 V), held for
+        #   the whole run. run_time is computed so the run FINISHES AT 08:30
+        #   local: minutes from config-generation time to the next 08:30, less
+        #   a ~10 min allowance for the initial HV ramp (run_time counts only
+        #   the data-taking window, which starts after the ramp). Because it
+        #   depends on the clock, `python run_config.py` must be (re)run
+        #   immediately before start_run so the value is fresh.
         # HV powered off automatically at the end (power_off_hv_at_end).
         # Pedestals: take a fresh dedicated 200 V pedestal run FIRST (200 V on
-        # both det1 mesh and drift) via run_config_pedestals.py at the start of
-        # this run; the long run then reuses it via 'latest' (+
+        # both det4 mesh and drift, all included detectors) via
+        # run_config_pedestals.py; the long run then reuses it via 'latest' (+
         # do_pedestal_threshold_run off), and the processor copies the pedthr
         # FDFs into the subrun's raw_daq_data so the hit-builder applies it.
         # M3 telescope (cards 0/3 ch 8-11, drift 500 / mesh 455) held at its
         # usual operating point throughout.
-        # P2_1 HV: mesh (1, 2), drift (1, 3) — on the p2-shelf HV cables.
-        # P2_4 HV: mesh (1, 0), drift (1, 1) — held at 0 (dead detector).
-        det1_mesh_op, det1_drift_op = 415, 615  # V, P2_1 efficiency operating point (gap 200 V)
+        # P2_4 HV: mesh (1, 0) = 1.000, drift (1, 1) = 1.001.
+        det4_mesh_op, det4_drift_op = 410, 610  # V, P2_4 operating point (gap 200 V)
 
-        def p2_hvs(det1_mesh, det1_drift):
-            """P2_4 channels fixed at 0 -> hv_control powers them off (det4 dead)."""
+        # Finish at 08:30 local: data-taking minutes from now to the next 08:30,
+        # minus ~10 min for the HV ramp before data starts.
+        _now = datetime.now()
+        _target = _now.replace(hour=8, minute=30, second=0, microsecond=0)
+        if _target <= _now:
+            _target += timedelta(days=1)
+        _run_minutes = max(1, int((_target - _now).total_seconds() // 60) - 10)
+
+        def p2_hvs(det4_mesh, det4_drift):
+            """Only det4 (card 1 ch 0/1) is powered; P2_1's old channels (2/3) off."""
             return {
                 0: {
                     8: 500,  # M3
@@ -164,10 +177,10 @@ class Config:
                     11: 500,  # M3
                 },
                 1: {
-                    0: 0,           # P2_4 mesh — dead, off
-                    1: 0,           # P2_4 drift — dead, off
-                    2: det1_mesh,   # P2_1 mesh
-                    3: det1_drift,  # P2_1 drift
+                    0: det4_mesh,   # P2_4 mesh  (1.000)
+                    1: det4_drift,  # P2_4 drift (1.001)
+                    2: 0,           # P2_1 mesh — removed, off
+                    3: 0,           # P2_1 drift — removed, off
                 },
                 3: {
                     8: 455,  # M3
@@ -178,9 +191,9 @@ class Config:
             }
 
         new_subrun = {
-            'sub_run_name': f'long_run_det1_{det1_mesh_op}_{det1_drift_op}',
-            'run_time': 24 * 60,  # Minutes — stopped manually with bash_scripts/stop_run.sh
-            'hvs': p2_hvs(det1_mesh_op, det1_drift_op),
+            'sub_run_name': f'long_run_det4_{det4_mesh_op}_{det4_drift_op}',
+            'run_time': _run_minutes,  # Minutes — sized to finish at 08:30 local
+            'hvs': p2_hvs(det4_mesh_op, det4_drift_op),
         }
         self.sub_runs.append(new_subrun)
 
@@ -436,9 +449,9 @@ class Config:
         #                            'm3_bot_bot', 'm3_bot_top', 'm3_top_bot', 'm3_top_top']
         # self.included_detectors = ['P2_3', 'P2_4',
         #                            'm3_bot_bot', 'm3_bot_top', 'm3_top_bot', 'm3_top_top']
-        # P2_4 (FEUs 3/4) is dead — excluded from the readout entirely; its HV
-        # channels are held at 0 in every subrun's hvs map.
-        self.included_detectors = ['P2_1',
+        # 7-20-26: det4 (P2_4) is the only P2 detector in the bench, now on the
+        # P2 (upper) position and cabled to FEUs 6/7. P2_1 removed.
+        self.included_detectors = ['P2_4',
                                    'm3_bot_bot', 'm3_bot_top', 'm3_top_bot', 'm3_top_top']
         # self.included_detectors = ['clas12_test',
         #                                    'm3_bot_bot', 'm3_bot_top', 'm3_top_bot', 'm3_top_top']
@@ -645,14 +658,15 @@ class Config:
             },
             {
                 'name': 'P2_4',
-                'description': 'Bulked at 8-7-26 by Alex+Enzo. First bulking with the cleanest evac line.',
+                'description': 'Bulked 9-7-26 by Alex+Enzo. Paper accidentally glued on the back '
+                               'side during frame gluing. Installed on the P2 (upper) position 7-20-26.',
                 'det_type': 'P2',
                 'resist_type': 'none',
                 'bulked_from': 'Alex+Enzo',
                 'det_center_coords': {  # Center of detector
                     'x': 0,  # mm
                     'y': 0,  # mm
-                    'z': self.bench_geometry['p1_z'] + self.bench_geometry['board_thickness'],  # mm
+                    'z': self.bench_geometry['p2_z'] + self.bench_geometry['board_thickness'],  # mm  P2 (upper) 7-20-26
                 },
                 'det_orientation': {
                     'x': 0,  # deg  Rotation about x axis
@@ -660,37 +674,35 @@ class Config:
                     'z': 0,  # deg  Rotation about z axis
                 },
                 'hv_channels': {
-                    'drift': (1, 1),
-                    'mesh': (1, 0),
+                    'drift': (1, 1),  # 1.001
+                    'mesh': (1, 0),   # 1.000
                 },
-                # Connectors 1 and 10 disconnected from the detector; connector 2
-                # additionally disconnected 7-16-26. Connectors 3-9 go incrementally to
-                # FEU 3 (3-8) then FEU 4 (1-8).
+                # Cabling on the P2 position, 7-20-26. Readout starts at connector 3:
+                # connectors 3-6 fill FEU 7 (ch 1-8), then connector 7 is NOT connected,
+                # and connectors 8-9 go to FEU 6 ch 5-8. Connectors 1, 2, 10 disconnected.
+                # PROVISIONAL connector<->channel labels: which connector is truly the
+                # missing one is unconfirmed on the detector side. All physically
+                # connected channels (FEU 7 ch 1-8, FEU 6 ch 5-8) are read out regardless,
+                # so the exact connector mapping (and the real missing connector) is to be
+                # resolved afterward from the track-hit correlation (as done for P2_2).
                 'dream_feus': {
-                    # 'c_1_bot': None,  # connector 1 disconnected from detector
-                    # 'c_1_top': None,
-                    # 'c_2_bot': (3, 1),  # connector 2 disconnected from detector 7-16-26
-                    # 'c_2_top': (3, 2),
-                    'c_3_bot': (3, 3),  # Runs along x direction, indicates y hit location
-                    'c_3_top': (3, 4),
-                    'c_4_bot': (3, 5),
-                    'c_4_top': (3, 6),
-                    'c_5_bot': (3, 7),  # Runs along y direction, indicates x hit location
-                    'c_5_top': (3, 8),
-                    'c_6_bot': (4, 1),
-                    'c_6_top': (4, 2),
-                    'c_7_bot': (4, 3),
-                    'c_7_top': (4, 4),
-                    'c_8_bot': (4, 5),
-                    'c_8_top': (4, 6),
-                    'c_9_bot': (4, 7),
-                    'c_9_top': (4, 8),
-                    # 'c_10_bot': None,  # connector 10 disconnected from detector
-                    # 'c_10_top': None,
+                    # 'c_1', 'c_2': disconnected (readout starts at connector 3)
+                    'c_3_bot': (7, 1),
+                    'c_3_top': (7, 2),
+                    'c_4_bot': (7, 3),
+                    'c_4_top': (7, 4),
+                    'c_5_bot': (7, 5),
+                    'c_5_top': (7, 6),
+                    'c_6_bot': (7, 7),
+                    'c_6_top': (7, 8),
+                    # 'c_7': not connected (provisional — verify from mapping)
+                    'c_8_bot': (6, 5),
+                    'c_8_top': (6, 6),
+                    'c_9_bot': (6, 7),
+                    'c_9_top': (6, 8),
+                    # 'c_10': disconnected
                 },
                 'dream_feu_orientation': {  # If connector is normal, inverted, rotated, or rotated_inverted
-                    # 'c_2_bot': 'rotated_inverted',  # connector 2 disconnected 7-16-26
-                    # 'c_2_top': 'rotated_inverted',
                     'c_3_bot': 'rotated_inverted',
                     'c_3_top': 'rotated_inverted',
                     'c_4_bot': 'rotated_inverted',
@@ -699,8 +711,6 @@ class Config:
                     'c_5_top': 'rotated_inverted',
                     'c_6_bot': 'rotated_inverted',
                     'c_6_top': 'rotated_inverted',
-                    'c_7_bot': 'rotated_inverted',
-                    'c_7_top': 'rotated_inverted',
                     'c_8_bot': 'rotated_inverted',
                     'c_8_top': 'rotated_inverted',
                     'c_9_bot': 'rotated_inverted',
