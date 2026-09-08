@@ -44,7 +44,8 @@ class Config:
         # self.run_name = 'p2_det1_long_run_mesh_scan_7-19-26'
         # self.run_name = 'p2_det1_drift_scan_7-19-26'
         # self.run_name = 'p2_det1_long_run_efficiency_7-19-26'
-        self.run_name = 'p2_det4_long_run_7-20-26'
+        # self.run_name = 'p2_det4_long_run_7-20-26'
+        self.run_name = 'p2_det5_alignment_mesh_drift_scan_9-8-26'
         # self.data_out_dir = '/mnt/cosmic_data/Run/'
         # self.data_out_dir = '/data/cosmic_data/Run_MX/'
         self.base_out_dir = BASE_DATA_DIR
@@ -137,38 +138,36 @@ class Config:
         default_drift, default_resist = 1000, 490  # V
 
         # ---------------------------------------------------------------------
-        # P2_4 long run, 7-20-26 (det4 now on p2_z — the P2 (upper) position;
-        # the only P2 detector in the bench this run. P2_1 removed; its HV
+        # P2_5 alignment + mesh scan + drift scan, 9-8-26 (det5 newly installed
+        # on the P1 (lower) position, cabled to FEUs 6/7; it is the only P2
+        # detector in the bench — P2_4 removed, so the P2 detectors' other HV
         # channels (1, 2)/(1, 3) are held at 0):
-        #   Single long run at the fixed operating point mesh = 410 V,
-        #   drift = 610 V (drift-gap potential drift - mesh = 200 V), held for
-        #   the whole run. run_time is computed so the run FINISHES AT 08:30
-        #   local: minutes from config-generation time to the next 08:30, less
-        #   a ~10 min allowance for the initial HV ramp (run_time counts only
-        #   the data-taking window, which starts after the ramp). Because it
-        #   depends on the clock, `python run_config.py` must be (re)run
-        #   immediately before start_run so the value is fresh.
-        # HV powered off automatically at the end (power_off_hv_at_end).
-        # Pedestals: take a fresh dedicated 200 V pedestal run FIRST (200 V on
-        # both det4 mesh and drift, all included detectors) via
-        # run_config_pedestals.py; the long run then reuses it via 'latest' (+
-        # do_pedestal_threshold_run off), and the processor copies the pedthr
-        # FDFs into the subrun's raw_daq_data so the hit-builder applies it.
+        #   1) 2 h initial run for alignment at the det5 operating point
+        #      (mesh, drift) = (420, 670), drift-gap potential 250 V.
+        #   2) Mesh HV scan: 8 x 30 min = 4 h, mesh stepped down from 420 V in
+        #      10 V intervals to 350 V. The drift is stepped down by the same
+        #      amount at each point — the potential across the drift gap is
+        #      drift - mesh, so the gap stays fixed at 250 V (drift 670 ->
+        #      600 V). The first point (420, 670) repeats the operating point.
+        #   3) Drift HV scan at fixed mesh = 420 V: 9 x 30 min = 4.5 h, drift
+        #      stepped up from 420 V in 50 V intervals to 820 V. Starts at 0
+        #      drift-gap potential (drift = mesh = 420 V) and grows the gap
+        #      0 -> 400 V.
+        # Total: 2 + 4 + 4.5 = 10.5 h, HV powered off automatically at the end
+        # (power_off_hv_at_end).
+        # Pedestals: new detector and new cabling since the last pedestal run
+        # (07-20-26), so take a fresh dedicated 200 V pedestal run FIRST via
+        # run_config_pedestals.py; every subrun then reuses it via 'latest'
+        # (+ do_pedestal_threshold_run off), and the processor copies the
+        # pedthr FDFs into each subrun's raw_daq_data.
         # M3 telescope (cards 0/3 ch 8-11, drift 500 / mesh 455) held at its
         # usual operating point throughout.
-        # P2_4 HV: mesh (1, 0) = 1.000, drift (1, 1) = 1.001.
-        det4_mesh_op, det4_drift_op = 410, 610  # V, P2_4 operating point (gap 200 V)
+        # P2_5 HV: mesh (1, 0) = 1.000, drift (1, 1) = 1.001.
+        det5_mesh_op, det5_drift_op = 420, 670  # V, P2_5 operating point (gap 250 V)
+        det5_gap = det5_drift_op - det5_mesh_op  # 250 V, held fixed through the mesh scan
 
-        # Finish at 08:30 local: data-taking minutes from now to the next 08:30,
-        # minus ~10 min for the HV ramp before data starts.
-        _now = datetime.now()
-        _target = _now.replace(hour=8, minute=30, second=0, microsecond=0)
-        if _target <= _now:
-            _target += timedelta(days=1)
-        _run_minutes = max(1, int((_target - _now).total_seconds() // 60) - 10)
-
-        def p2_hvs(det4_mesh, det4_drift):
-            """Only det4 (card 1 ch 0/1) is powered; P2_1's old channels (2/3) off."""
+        def p2_hvs(det5_mesh, det5_drift):
+            """Only det5 (card 1 ch 0/1) is powered; the other P2 channels (2/3) off."""
             return {
                 0: {
                     8: 500,  # M3
@@ -177,10 +176,10 @@ class Config:
                     11: 500,  # M3
                 },
                 1: {
-                    0: det4_mesh,   # P2_4 mesh  (1.000)
-                    1: det4_drift,  # P2_4 drift (1.001)
-                    2: 0,           # P2_1 mesh — removed, off
-                    3: 0,           # P2_1 drift — removed, off
+                    0: det5_mesh,   # P2_5 mesh  (1.000)
+                    1: det5_drift,  # P2_5 drift (1.001)
+                    2: 0,           # no detector on these channels — off
+                    3: 0,
                 },
                 3: {
                     8: 455,  # M3
@@ -190,12 +189,35 @@ class Config:
                 },
             }
 
+        # 1) Alignment run at the operating point.
         new_subrun = {
-            'sub_run_name': f'long_run_det4_{det4_mesh_op}_{det4_drift_op}',
-            'run_time': _run_minutes,  # Minutes — sized to finish at 08:30 local
-            'hvs': p2_hvs(det4_mesh_op, det4_drift_op),
+            'sub_run_name': f'initial_run_det5_{det5_mesh_op}_{det5_drift_op}',
+            'run_time': 2 * 60,  # Minutes
+            'hvs': p2_hvs(det5_mesh_op, det5_drift_op),
         }
         self.sub_runs.append(new_subrun)
+
+        # 2) Mesh scan: 420 -> 350 V in 10 V steps, drift follows (gap fixed at 250 V).
+        for step in range(8):  # 8 x 30 min = 4 h
+            det5_mesh = det5_mesh_op - 10 * step  # 420 -> 350 V
+            det5_drift = det5_mesh + det5_gap  # 670 -> 600 V
+            new_subrun = {
+                'sub_run_name': f'mesh_scan_det5_{det5_mesh}_{det5_drift}',
+                'run_time': 30,  # Minutes
+                'hvs': p2_hvs(det5_mesh, det5_drift),
+            }
+            self.sub_runs.append(new_subrun)
+
+        # 3) Drift scan: mesh fixed at 420 V, drift 420 -> 820 V in 50 V steps.
+        det5_mesh_fixed = det5_mesh_op  # V, mesh held fixed for the drift scan
+        for step in range(9):  # 9 x 30 min = 4.5 h
+            det5_drift = det5_mesh_fixed + 50 * step  # 420 -> 820 V; drift gap 0 -> 400 V
+            new_subrun = {
+                'sub_run_name': f'drift_scan_det5_{det5_mesh_fixed}_{det5_drift}',
+                'run_time': 30,  # Minutes
+                'hvs': p2_hvs(det5_mesh_fixed, det5_drift),
+            }
+            self.sub_runs.append(new_subrun)
 
 
         # new_subrun = {
@@ -449,9 +471,11 @@ class Config:
         #                            'm3_bot_bot', 'm3_bot_top', 'm3_top_bot', 'm3_top_top']
         # self.included_detectors = ['P2_3', 'P2_4',
         #                            'm3_bot_bot', 'm3_bot_top', 'm3_top_bot', 'm3_top_top']
-        # 7-20-26: det4 (P2_4) is the only P2 detector in the bench, now on the
-        # P2 (upper) position and cabled to FEUs 6/7. P2_1 removed.
-        self.included_detectors = ['P2_4',
+        # self.included_detectors = ['P2_4',
+        #                            'm3_bot_bot', 'm3_bot_top', 'm3_top_bot', 'm3_top_top']
+        # 9-8-26: det5 (P2_5) is the only P2 detector in the bench, on the
+        # P1 (lower) position and cabled to FEUs 6/7. P2_4 removed.
+        self.included_detectors = ['P2_5',
                                    'm3_bot_bot', 'm3_bot_top', 'm3_top_bot', 'm3_top_top']
         # self.included_detectors = ['clas12_test',
         #                                    'm3_bot_bot', 'm3_bot_top', 'm3_top_bot', 'm3_top_top']
@@ -715,6 +739,71 @@ class Config:
                     'c_8_top': 'rotated_inverted',
                     'c_9_bot': 'rotated_inverted',
                     'c_9_top': 'rotated_inverted',
+                },
+            },
+            {
+                'name': 'P2_5',
+                'description': 'Bulked at CERN July 2026. Installed on the P1 (lower) position 9-8-26.',
+                'det_type': 'P2',
+                'resist_type': 'none',
+                'bulked_from': 'CERN',
+                'det_center_coords': {  # Center of detector
+                    'x': 0,  # mm
+                    'y': 0,  # mm
+                    'z': self.bench_geometry['p1_z'] + self.bench_geometry['board_thickness'],  # mm  P1 (lower) 9-8-26
+                },
+                'det_orientation': {
+                    'x': 0,  # deg  Rotation about x axis
+                    'y': 0,  # deg  Rotation about y axis
+                    'z': 0,  # deg  Rotation about z axis
+                },
+                'hv_channels': {
+                    'drift': (1, 1),  # 1.001
+                    'mesh': (1, 0),   # 1.000
+                },
+                # Cabling on the P1 position, 9-8-26: connectors 1-8 connected in the usual
+                # incremental order — connector 1 bot -> FEU 6 Dream slot 1, and on up through
+                # FEU 6 (ch 1-8) for connectors 1-4, then FEU 7 (ch 1-8) for connectors 5-8.
+                # Connectors 9 and 10 are NOT connected.
+                'dream_feus': {
+                    'c_1_bot': (6, 1),  # Runs along x direction, indicates y hit location
+                    'c_1_top': (6, 2),
+                    'c_2_bot': (6, 3),
+                    'c_2_top': (6, 4),
+                    'c_3_bot': (6, 5),
+                    'c_3_top': (6, 6),
+                    'c_4_bot': (6, 7),
+                    'c_4_top': (6, 8),
+                    'c_5_bot': (7, 1),  # Runs along y direction, indicates x hit location
+                    'c_5_top': (7, 2),
+                    'c_6_bot': (7, 3),
+                    'c_6_top': (7, 4),
+                    'c_7_bot': (7, 5),
+                    'c_7_top': (7, 6),
+                    'c_8_bot': (7, 7),
+                    'c_8_top': (7, 8),
+                    # 'c_9_bot': None,  # connector 9 not connected
+                    # 'c_9_top': None,
+                    # 'c_10_bot': None,  # connector 10 not connected
+                    # 'c_10_top': None,
+                },
+                'dream_feu_orientation': {  # If connector is normal, inverted, rotated, or rotated_inverted
+                    'c_1_bot': 'rotated_inverted',
+                    'c_1_top': 'rotated_inverted',
+                    'c_2_bot': 'rotated_inverted',
+                    'c_2_top': 'rotated_inverted',
+                    'c_3_bot': 'rotated_inverted',
+                    'c_3_top': 'rotated_inverted',
+                    'c_4_bot': 'rotated_inverted',
+                    'c_4_top': 'rotated_inverted',
+                    'c_5_bot': 'rotated_inverted',
+                    'c_5_top': 'rotated_inverted',
+                    'c_6_bot': 'rotated_inverted',
+                    'c_6_top': 'rotated_inverted',
+                    'c_7_bot': 'rotated_inverted',
+                    'c_7_top': 'rotated_inverted',
+                    'c_8_bot': 'rotated_inverted',
+                    'c_8_top': 'rotated_inverted',
                 },
             },
             {
