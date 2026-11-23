@@ -46,7 +46,8 @@ class Config:
         # self.run_name = 'p2_det1_long_run_efficiency_7-19-26'
         # self.run_name = 'p2_det4_long_run_7-20-26'
         # self.run_name = 'p2_det5_alignment_mesh_drift_scan_9-8-26'
-        self.run_name = 'p2_det5_long_run_9-9-26'
+        # self.run_name = 'p2_det5_long_run_9-9-26'
+        self.run_name = 'p2_det2_feu7_test_11-23-26'
         # self.data_out_dir = '/mnt/cosmic_data/Run/'
         # self.data_out_dir = '/data/cosmic_data/Run_MX/'
         self.base_out_dir = BASE_DATA_DIR
@@ -58,7 +59,7 @@ class Config:
         self.m3_tracking_inner_dir = 'm3_tracking_root'
         self.detector_info_dir = f'/mnt/cosmic_data/config/detectors/'
         self.m3_feu_num = 1
-        self.power_off_hv_at_end = True  # True to power off HV at end of run
+        self.power_off_hv_at_end = False  # True to power off HV at end of run
         self.save_fdfs = True  # True to save FDF files after processing
         self.resume = True  # True to skip sub-runs already completed in run_out_dir (resume after a crash).
         # Completion is tracked by a '.subrun_complete' marker written into each sub-run's out dir on success,
@@ -167,37 +168,24 @@ class Config:
         # FDFs into the subrun's raw_daq_data.
         # M3 telescope (cards 0/3 ch 8-11, drift 500 / mesh 455) held at its
         # usual operating point throughout.
-        # P2_5 HV: mesh (1, 0) = 1.000, drift (1, 1) = 1.001.
-        det5_mesh, det5_drift = 420, 820  # V, fixed for the whole run (gap 400 V)
+        # 11-23-26: P2_2 (det2) back in the bench on the P1 (lower) position, connectors
+        # 2-9 on the same Dream slots det5 used (FEU 6 1-8, FEU 7 1-8); connectors 1/10
+        # unplugged. HV on the det5 cables: mesh (1, 0) = 1.000, drift (1, 1) = 1.001,
+        # already powered at 440/740 by hand. Short test subrun to check FEU 7 comms
+        # (manual RunCtrl gave "UdpSocket_Read failed with 0 for con_id=7").
+        det2_mesh, det2_drift = 440, 740
 
-        def p2_hvs(det5_mesh, det5_drift):
-            """Only det5 (card 1 ch 0/1) is powered; the other P2 channels (2/3) off."""
+        def p2_hvs(mesh, drift):
             return {
-                0: {
-                    8: 500,  # M3
-                    9: 500,  # M3
-                    10: 500,  # M3
-                    11: 500,  # M3
-                },
-                1: {
-                    0: det5_mesh,   # P2_5 mesh  (1.000)
-                    1: det5_drift,  # P2_5 drift (1.001)
-                    2: 0,           # no detector on these channels — off
-                    3: 0,
-                },
-                3: {
-                    8: 455,  # M3
-                    9: 455,  # M3
-                    10: 455,  # M3
-                    11: 455,  # M3
-                },
+                0: {8: 500, 9: 500, 10: 500, 11: 500},  # M3 drift
+                1: {0: mesh, 1: drift, 2: 0, 3: 0},       # P2_2 mesh/drift on 1.000/1.001
+                3: {8: 455, 9: 455, 10: 455, 11: 455},  # M3 mesh
             }
 
-        # Single 24 h subrun at the fixed setpoint (stopped manually earlier).
         new_subrun = {
-            'sub_run_name': f'long_run_det5_{det5_mesh}_{det5_drift}',
-            'run_time': 24 * 60,  # Minutes (cap; stop manually with stop_run.sh)
-            'hvs': p2_hvs(det5_mesh, det5_drift),
+            'sub_run_name': f'feu7_test_det2_{det2_mesh}_{det2_drift}',
+            'run_time': 5,  # Minutes
+            'hvs': p2_hvs(det2_mesh, det2_drift),
         }
         self.sub_runs.append(new_subrun)
 
@@ -457,7 +445,7 @@ class Config:
         #                            'm3_bot_bot', 'm3_bot_top', 'm3_top_bot', 'm3_top_top']
         # 9-8-26: det5 (P2_5) is the only P2 detector in the bench, on the
         # P1 (lower) position and cabled to FEUs 6/7. P2_4 removed.
-        self.included_detectors = ['P2_5',
+        self.included_detectors = ['P2_2',
                                    'm3_bot_bot', 'm3_bot_top', 'm3_top_bot', 'm3_top_top']
         # self.included_detectors = ['clas12_test',
         #                                    'm3_bot_bot', 'm3_bot_top', 'm3_top_bot', 'm3_top_top']
@@ -536,7 +524,7 @@ class Config:
                 'det_center_coords': {  # Center of detector
                     'x': 0,  # mm
                     'y': 0,  # mm
-                    'z': self.bench_geometry['p2_z'] + self.bench_geometry['board_thickness'],  # mm
+                    'z': self.bench_geometry['p1_z'] + self.bench_geometry['board_thickness'],  # mm
                 },
                 'det_orientation': {
                     'x': 0,  # deg  Rotation about x axis
@@ -544,8 +532,8 @@ class Config:
                     'z': 0,  # deg  Rotation about z axis
                 },
                 'hv_channels': {
-                    'drift': (1, 3),
-                    'mesh': (1, 2),
+                    'drift': (1, 1),  # 1.001 (det5 cable, P1 position, 11-23-26)
+                    'mesh': (1, 0),   # 1.000
                 },
                 # Physical cabling deduced from track-hit correlation on the 7-9-26 run
                 # (hit-level Procrustes fit: scale 0.92, median residual 11 mm; wrong
@@ -554,29 +542,27 @@ class Config:
                 #   - connectors 2-7 go incrementally to FEU 6 (5-8) then FEU 7 (1-8);
                 #   - connectors 8-10 continue on FEU 8, excluded from runs for now
                 #     (crashes the DAQ), so they are commented out.
+                # 11-23-26 on P1: connectors 2-9 on det5's Dream slots -> FEU 6 (1-8) then
+                # FEU 7 (1-8); connectors 1 and 10 unplugged.
                 'dream_feus': {
-                    # 'c_1_bot': None,  # connector 1 disconnected from detector
-                    # 'c_1_top': None,
-                    'c_2_bot': (6, 5),
-                    'c_2_top': (6, 6),
-                    'c_3_bot': (6, 7),
-                    'c_3_top': (6, 8),
-                    'c_4_bot': (7, 1),
-                    'c_4_top': (7, 2),
-                    'c_5_bot': (7, 3),
-                    'c_5_top': (7, 4),
-                    'c_6_bot': (7, 5),
-                    'c_6_top': (7, 6),
-                    'c_7_bot': (7, 7),
-                    'c_7_top': (7, 8),
-                    # 'c_8_bot': (8, 1),  # FEU 8 excluded from run
-                    # 'c_8_top': (8, 2),
-                    # 'c_9_bot': (8, 3),
-                    # 'c_9_top': (8, 4),
-                    # 'c_10_bot': (8, 5),
-                    # 'c_10_top': (8, 6),
+                    'c_2_bot': (6, 1),
+                    'c_2_top': (6, 2),
+                    'c_3_bot': (6, 3),
+                    'c_3_top': (6, 4),
+                    'c_4_bot': (6, 5),
+                    'c_4_top': (6, 6),
+                    'c_5_bot': (6, 7),
+                    'c_5_top': (6, 8),
+                    'c_6_bot': (7, 1),
+                    'c_6_top': (7, 2),
+                    'c_7_bot': (7, 3),
+                    'c_7_top': (7, 4),
+                    'c_8_bot': (7, 5),
+                    'c_8_top': (7, 6),
+                    'c_9_bot': (7, 7),
+                    'c_9_top': (7, 8),
                 },
-                'dream_feu_orientation': {  # If connector is normal, inverted, rotated, or rotated_inverted
+                'dream_feu_orientation': {
                     'c_2_bot': 'rotated_inverted',
                     'c_2_top': 'rotated_inverted',
                     'c_3_bot': 'rotated_inverted',
@@ -589,12 +575,10 @@ class Config:
                     'c_6_top': 'rotated_inverted',
                     'c_7_bot': 'rotated_inverted',
                     'c_7_top': 'rotated_inverted',
-                    # 'c_8_bot': 'rotated_inverted',  # FEU 8 excluded from run
-                    # 'c_8_top': 'rotated_inverted',
-                    # 'c_9_bot': 'rotated_inverted',
-                    # 'c_9_top': 'rotated_inverted',
-                    # 'c_10_bot': 'rotated_inverted',
-                    # 'c_10_top': 'rotated_inverted',
+                    'c_8_bot': 'rotated_inverted',
+                    'c_8_top': 'rotated_inverted',
+                    'c_9_bot': 'rotated_inverted',
+                    'c_9_top': 'rotated_inverted',
                 },
             },
             {
