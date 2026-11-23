@@ -47,7 +47,8 @@ class Config:
         # self.run_name = 'p2_det4_long_run_7-20-26'
         # self.run_name = 'p2_det5_alignment_mesh_drift_scan_9-8-26'
         # self.run_name = 'p2_det5_long_run_9-9-26'
-        self.run_name = 'p2_det2_feu7_test_11-23-26'
+        # self.run_name = 'p2_det2_feu7_test_11-23-26'
+        self.run_name = 'p2_det2_alignment_mesh_drift_scan_long_run_11-23-26'
         # self.data_out_dir = '/mnt/cosmic_data/Run/'
         # self.data_out_dir = '/data/cosmic_data/Run_MX/'
         self.base_out_dir = BASE_DATA_DIR
@@ -59,7 +60,7 @@ class Config:
         self.m3_tracking_inner_dir = 'm3_tracking_root'
         self.detector_info_dir = f'/mnt/cosmic_data/config/detectors/'
         self.m3_feu_num = 1
-        self.power_off_hv_at_end = False  # True to power off HV at end of run
+        self.power_off_hv_at_end = True  # True to power off HV at end of run
         self.save_fdfs = True  # True to save FDF files after processing
         self.resume = True  # True to skip sub-runs already completed in run_out_dir (resume after a crash).
         # Completion is tracked by a '.subrun_complete' marker written into each sub-run's out dir on success,
@@ -168,26 +169,71 @@ class Config:
         # FDFs into the subrun's raw_daq_data.
         # M3 telescope (cards 0/3 ch 8-11, drift 500 / mesh 455) held at its
         # usual operating point throughout.
-        # 11-23-26: P2_2 (det2) back in the bench on the P1 (lower) position, connectors
-        # 2-9 on the same Dream slots det5 used (FEU 6 1-8, FEU 7 1-8); connectors 1/10
-        # unplugged. HV on the det5 cables: mesh (1, 0) = 1.000, drift (1, 1) = 1.001,
-        # already powered at 440/740 by hand. Short test subrun to check FEU 7 comms
-        # (manual RunCtrl gave "UdpSocket_Read failed with 0 for con_id=7").
-        det2_mesh, det2_drift = 440, 740
+        # ---------------------------------------------------------------------
+        # P2_2 (det2) run series 11-23-26 -> Wed 11-25-26 08:00, autonomous.
+        # det2 on the P1 (lower) position, connectors 2-9 on FEU 6 (1-8) / FEU 7 (1-8),
+        # connectors 1/10 unplugged. HV on the P1 cables: mesh (1, 0) = 1.000,
+        # drift (1, 1) = 1.001. Operating point 440/740 (drift gap 300 V).
+        # 440 V is the MAXIMUM mesh voltage for this detector — nothing goes above it.
+        #   1) 1 h alignment run at 440/740
+        #   2) mesh scan 430 -> 340 V in 10 V steps, drift stepped with the mesh
+        #      (constant 300 V drift gap), 30 min/point (10 points, 5 h)
+        #   3) drift scan at mesh 440: drift 440 (zero drift field) -> 1000 V in
+        #      25 V steps (+ a final 1000 V point), 30 min/point (24 points, 12 h)
+        #   4) long efficiency run at 440/740 until Wed 08:00. Its run_time is sized
+        #      with no HV-ramp allowance (so it would overrun slightly); a stop timer
+        #      (tmux session 'stop_timer') runs stop_run.sh at 08:00, which ends the
+        #      run and powers ALL HV off (power_off_hv_at_end = True).
+        # Pedestals: fresh 200 V pedestal run first, reused via 'latest'.
+        # FEU 7 dropped off the network on 11-23-26 until power-cycled; if the run
+        # stalls with "UdpSocket_Read failed ... con_id=7", power-cycle FEU 7.
+        det2_mesh_op, det2_drift_op = 440, 740
+        det2_gap_op = det2_drift_op - det2_mesh_op  # 300 V
 
         def p2_hvs(mesh, drift):
+            assert mesh <= 440, 'det2 mesh must not exceed 440 V'
             return {
                 0: {8: 500, 9: 500, 10: 500, 11: 500},  # M3 drift
                 1: {0: mesh, 1: drift, 2: 0, 3: 0},       # P2_2 mesh/drift on 1.000/1.001
                 3: {8: 455, 9: 455, 10: 455, 11: 455},  # M3 mesh
             }
 
-        new_subrun = {
-            'sub_run_name': f'feu7_test_det2_{det2_mesh}_{det2_drift}',
-            'run_time': 5,  # Minutes
-            'hvs': p2_hvs(det2_mesh, det2_drift),
-        }
-        self.sub_runs.append(new_subrun)
+        # 1) Alignment
+        self.sub_runs.append({
+            'sub_run_name': f'alignment_det2_{det2_mesh_op}_{det2_drift_op}',
+            'run_time': 60,  # Minutes
+            'hvs': p2_hvs(det2_mesh_op, det2_drift_op),
+        })
+
+        # 2) Mesh scan, constant drift gap
+        for mesh in range(430, 340 - 1, -10):
+            drift = mesh + det2_gap_op
+            self.sub_runs.append({
+                'sub_run_name': f'mesh_scan_det2_{mesh}_{drift}',
+                'run_time': 30,  # Minutes
+                'hvs': p2_hvs(mesh, drift),
+            })
+
+        # 3) Drift scan, mesh fixed at the operating point
+        _drift_points = list(range(det2_mesh_op, 1000 + 1, 25))
+        if _drift_points[-1] != 1000:
+            _drift_points.append(1000)  # 25 V steps from 440 land on 990 — finish at 1000
+        for drift in _drift_points:
+            self.sub_runs.append({
+                'sub_run_name': f'drift_scan_det2_{det2_mesh_op}_{drift}',
+                'run_time': 30,  # Minutes
+                'hvs': p2_hvs(det2_mesh_op, drift),
+            })
+
+        # 4) Long efficiency run until Wed 11-25-26 08:00 (stop timer enforces the end).
+        _end = datetime(2026, 11, 25, 8, 0)
+        _scan_minutes = sum(sr['run_time'] for sr in self.sub_runs)
+        _long_minutes = max(60, int((_end - datetime.now()).total_seconds() / 60) - _scan_minutes)
+        self.sub_runs.append({
+            'sub_run_name': f'long_run_det2_{det2_mesh_op}_{det2_drift_op}',
+            'run_time': _long_minutes,  # Minutes — sized to end ~08:00 Wed
+            'hvs': p2_hvs(det2_mesh_op, det2_drift_op),
+        })
 
 
         # new_subrun = {
