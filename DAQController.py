@@ -10,7 +10,7 @@ Created as Cosmic_Bench_DAQ_Control/DAQController.py
 
 import os
 import subprocess
-from time import time
+from time import time, sleep
 
 
 class DAQController:
@@ -53,6 +53,20 @@ class DAQController:
                 return False
 
             self.measured_run_time = time() - self.run_start_time
+
+            # RunCtrl can abort during FEU configuration (e.g. "WrRd_Missmatch", an
+            # unreachable FEU) and still produce a normal 'Dream DAQ stopped' reply,
+            # leaving 0-byte data files. Treat a stop far earlier than the requested
+            # run_time as a failed start so daq_control retries the sub-run instead
+            # of marking it complete. (A manual stop_run/stop_sub_run also ends early;
+            # daq_control checks those flags before retrying, so it is not re-run.)
+            requested_s = float(self.subrun.get('run_time', 0)) * 60
+            if requested_s >= 120 and self.measured_run_time < min(60, 0.5 * requested_s):
+                print(f'DAQ stopped after only {self.measured_run_time:.0f} s of a requested '
+                      f'{requested_s:.0f} s — treating as a failed start, retrying in 30 s')
+                run_successful = False
+                sleep(30)
+                return False
 
         except KeyboardInterrupt:
             print('Keyboard interrupt. Stopping DAQ process.')
