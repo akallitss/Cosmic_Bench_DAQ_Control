@@ -170,7 +170,7 @@ class Config:
         # M3 telescope (cards 0/3 ch 8-11, drift 500 / mesh 455) held at its
         # usual operating point throughout.
         # ---------------------------------------------------------------------
-        # P2_2 (det2) run series 11-23-26 -> Wed 11-25-26 08:00, autonomous.
+        # P2_2 (det2) run series, started Tue 11-24-26 ~10:30, autonomous (~38 h).
         # det2 on the P1 (lower) position, connectors 2-9 on FEU 6 (1-8) / FEU 7 (1-8),
         # connectors 1/10 unplugged. HV on the P1 cables: mesh (1, 0) = 1.000,
         # drift (1, 1) = 1.001. Operating point 440/740 (drift gap 300 V).
@@ -180,10 +180,8 @@ class Config:
         #      (constant 300 V drift gap), 30 min/point (10 points, 5 h)
         #   3) drift scan at mesh 440: drift 440 (zero drift field) -> 1000 V in
         #      25 V steps (+ a final 1000 V point), 30 min/point (24 points, 12 h)
-        #   4) long efficiency run at 440/740 until Wed 08:00. Its run_time is sized
-        #      with no HV-ramp allowance (so it would overrun slightly); a stop timer
-        #      (tmux session 'stop_timer') runs stop_run.sh at 08:00, which ends the
-        #      run and powers ALL HV off (power_off_hv_at_end = True).
+        #   4) long efficiency run at 440/740 for 20 h, then ALL HV powers off
+        #      (power_off_hv_at_end = True).
         # Pedestals: fresh 200 V pedestal run first, reused via 'latest'.
         # FEU 7 dropped off the network on 11-23-26 until power-cycled; if the run
         # stalls with "UdpSocket_Read failed ... con_id=7", power-cycle FEU 7.
@@ -225,13 +223,14 @@ class Config:
                 'hvs': p2_hvs(det2_mesh_op, drift),
             })
 
-        # 4) Long efficiency run until Wed 11-25-26 08:00 (stop timer enforces the end).
-        _end = datetime(2026, 11, 25, 8, 0)
-        _scan_minutes = sum(sr['run_time'] for sr in self.sub_runs)
-        _long_minutes = max(60, int((_end - datetime.now()).total_seconds() / 60) - _scan_minutes)
+        # 4) Long efficiency run, 20 h as originally planned. Start slipped to
+        #    Tue 11-24 ~10:30 (main run wasn't launched after the 11-23 pedestals), so
+        #    the user agreed to let it run past Wed 08:00: expected end ~Thu 00:30,
+        #    then all HV powers off. Stop early with `bash bash_scripts/stop_run.sh`.
+        _long_minutes = 20 * 60
         self.sub_runs.append({
             'sub_run_name': f'long_run_det2_{det2_mesh_op}_{det2_drift_op}',
-            'run_time': _long_minutes,  # Minutes — sized to end ~08:00 Wed
+            'run_time': _long_minutes,  # Minutes
             'hvs': p2_hvs(det2_mesh_op, det2_drift_op),
         })
 
