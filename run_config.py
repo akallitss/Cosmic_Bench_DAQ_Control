@@ -48,7 +48,8 @@ class Config:
         # self.run_name = 'p2_det5_alignment_mesh_drift_scan_9-8-26'
         # self.run_name = 'p2_det5_long_run_9-9-26'
         # self.run_name = 'p2_det2_feu7_test_11-23-26'
-        self.run_name = 'p2_det2_alignment_mesh_drift_scan_long_run_11-23-26'
+        # self.run_name = 'p2_det2_alignment_mesh_drift_scan_long_run_11-23-26'  # aborted 11-24 10:35, mesh drew 5-6 uA at 440
+        self.run_name = 'p2_det2_alignment_mesh_drift_scan_long_run_430_11-24-26'
         # self.data_out_dir = '/mnt/cosmic_data/Run/'
         # self.data_out_dir = '/data/cosmic_data/Run_MX/'
         self.base_out_dir = BASE_DATA_DIR
@@ -173,19 +174,22 @@ class Config:
         # P2_2 (det2) run series, started Tue 11-24-26 ~10:30, autonomous (~38 h).
         # det2 on the P1 (lower) position, connectors 2-9 on FEU 6 (1-8) / FEU 7 (1-8),
         # connectors 1/10 unplugged. HV on the P1 cables: mesh (1, 0) = 1.000,
-        # drift (1, 1) = 1.001. Operating point 440/740 (drift gap 300 V).
+        # drift (1, 1) = 1.001. Operating point 430/730 (drift gap 300 V); was 440/740, see below.
         # 440 V is the MAXIMUM mesh voltage for this detector — nothing goes above it.
-        #   1) 1 h alignment run at 440/740
-        #   2) mesh scan 430 -> 340 V in 10 V steps, drift stepped with the mesh
-        #      (constant 300 V drift gap), 30 min/point (10 points, 5 h)
-        #   3) drift scan at mesh 440: drift 440 (zero drift field) -> 1000 V in
+        #   1) 1 h alignment run at 430/730
+        #   2) mesh scan 420 -> 340 V in 10 V steps, drift stepped with the mesh
+        #      (constant 300 V drift gap), 30 min/point (9 points, 4.5 h)
+        #   3) drift scan at mesh 430: drift 430 (zero drift field) -> 1000 V in
         #      25 V steps (+ a final 1000 V point), 30 min/point (24 points, 12 h)
-        #   4) long efficiency run at 440/740 for 20 h, then ALL HV powers off
+        #   4) long efficiency run at 430/730 for 20 h, then ALL HV powers off
         #      (power_off_hv_at_end = True).
         # Pedestals: fresh 200 V pedestal run first, reused via 'latest'.
         # FEU 7 dropped off the network on 11-23-26 until power-cycled; if the run
         # stalls with "UdpSocket_Read failed ... con_id=7", power-cycle FEU 7.
-        det2_mesh_op, det2_drift_op = 440, 740
+        # 11-24-26 10:35: at 440 V the mesh drew a steady 5-6 uA right after ramping
+        # (0.11 uA at 405 V; 0-0.24 uA at 440 the day before), so the operating point
+        # was lowered to 430/730 on the user's decision. 440 V remains the hard cap.
+        det2_mesh_op, det2_drift_op = 430, 730
         det2_gap_op = det2_drift_op - det2_mesh_op  # 300 V
 
         def p2_hvs(mesh, drift):
@@ -204,7 +208,7 @@ class Config:
         })
 
         # 2) Mesh scan, constant drift gap
-        for mesh in range(430, 340 - 1, -10):
+        for mesh in range(det2_mesh_op - 10, 340 - 1, -10):
             drift = mesh + det2_gap_op
             self.sub_runs.append({
                 'sub_run_name': f'mesh_scan_det2_{mesh}_{drift}',
@@ -215,7 +219,7 @@ class Config:
         # 3) Drift scan, mesh fixed at the operating point
         _drift_points = list(range(det2_mesh_op, 1000 + 1, 25))
         if _drift_points[-1] != 1000:
-            _drift_points.append(1000)  # 25 V steps from 440 land on 990 — finish at 1000
+            _drift_points.append(1000)  # 25 V steps from 430 land on 980 — finish at 1000
         for drift in _drift_points:
             self.sub_runs.append({
                 'sub_run_name': f'drift_scan_det2_{det2_mesh_op}_{drift}',
