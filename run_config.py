@@ -50,7 +50,8 @@ class Config:
         # self.run_name = 'p2_det2_feu7_test_11-23-26'
         # self.run_name = 'p2_det2_alignment_mesh_drift_scan_long_run_11-23-26'  # aborted 11-24 10:35, mesh drew 5-6 uA at 440
         # self.run_name = 'p2_det2_alignment_mesh_drift_scan_long_run_430_11-24-26'  # DAQ hung from 03:32 11-25 (drift 980), stopped 12:25
-        self.run_name = 'p2_det2_long_run_430_11-25-26'
+        # self.run_name = 'p2_det2_long_run_430_11-25-26'  # det2 had moved out of the M3 acceptance, stopped 17:06
+        self.run_name = 'p2_det2_long_run_430_repositioned_11-25-26'
         # self.data_out_dir = '/mnt/cosmic_data/Run/'
         # self.data_out_dir = '/data/cosmic_data/Run_MX/'
         self.base_out_dir = BASE_DATA_DIR
@@ -233,11 +234,17 @@ class Config:
                 'hvs': p2_hvs(det2_mesh_op, drift),
             })
 
-        # 4) Long efficiency run, 20 h as originally planned. Start slipped to
-        #    Tue 11-24 ~10:30 (main run wasn't launched after the 11-23 pedestals), so
-        #    the user agreed to let it run past Wed 08:00: expected end ~Thu 00:30,
-        #    then all HV powers off. Stop early with `bash bash_scripts/stop_run.sh`.
-        _long_minutes = 20 * 60
+        # 4) Long efficiency run. 11-25-26 17:06: the first 11-25 long run was stopped
+        #    because det2 had shifted out of the M3 acceptance. After repositioning it,
+        #    run until Thu 11-26 06:00 (user's choice); run_time is computed when this
+        #    file is executed (right before start_run.sh), minus ~5 min for HV ramping.
+        #    Then all HV powers off. Stop early with `bash bash_scripts/stop_run.sh`.
+        from datetime import datetime as _dt, timedelta as _td
+        _now = _dt.now()
+        _end = _now.replace(hour=6, minute=0, second=0, microsecond=0)
+        if _end <= _now:
+            _end += _td(days=1)
+        _long_minutes = max(60, int((_end - _now).total_seconds() // 60) - 5)
         self.sub_runs.append({
             'sub_run_name': f'long_run_det2_{det2_mesh_op}_{det2_drift_op}',
             'run_time': _long_minutes,  # Minutes
