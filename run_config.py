@@ -49,7 +49,8 @@ class Config:
         # self.run_name = 'p2_det5_long_run_9-9-26'
         # self.run_name = 'p2_det2_feu7_test_11-23-26'
         # self.run_name = 'p2_det2_alignment_mesh_drift_scan_long_run_11-23-26'  # aborted 11-24 10:35, mesh drew 5-6 uA at 440
-        self.run_name = 'p2_det2_alignment_mesh_drift_scan_long_run_430_11-24-26'
+        # self.run_name = 'p2_det2_alignment_mesh_drift_scan_long_run_430_11-24-26'  # DAQ hung from 03:32 11-25 (drift 980), stopped 12:25
+        self.run_name = 'p2_det2_long_run_430_11-25-26'
         # self.data_out_dir = '/mnt/cosmic_data/Run/'
         # self.data_out_dir = '/data/cosmic_data/Run_MX/'
         self.base_out_dir = BASE_DATA_DIR
@@ -189,6 +190,11 @@ class Config:
         # 11-24-26 10:35: at 440 V the mesh drew a steady 5-6 uA right after ramping
         # (0.11 uA at 405 V; 0-0.24 uA at 440 the day before), so the operating point
         # was lowered to 430/730 on the user's decision. 440 V remains the hard cap.
+        # 11-25-26: the 11-24 series hung at the drift 980 V point (FEU config errors
+        # on FEU 1/6 at 03:32, then RunCtrl up with 0 events for 8 h). Good data up to
+        # drift 955. After stopping and power-cycling FEUs 1/6/7, this run is ONLY the
+        # 20 h long run at 430/730 (only_long_run below); 980/1000 drift points skipped.
+        only_long_run = True
         det2_mesh_op, det2_drift_op = 430, 730
         det2_gap_op = det2_drift_op - det2_mesh_op  # 300 V
 
@@ -201,14 +207,14 @@ class Config:
             }
 
         # 1) Alignment
-        self.sub_runs.append({
+        if not only_long_run: self.sub_runs.append({
             'sub_run_name': f'alignment_det2_{det2_mesh_op}_{det2_drift_op}',
             'run_time': 60,  # Minutes
             'hvs': p2_hvs(det2_mesh_op, det2_drift_op),
         })
 
         # 2) Mesh scan, constant drift gap
-        for mesh in range(det2_mesh_op - 10, 340 - 1, -10):
+        for mesh in ([] if only_long_run else range(det2_mesh_op - 10, 340 - 1, -10)):
             drift = mesh + det2_gap_op
             self.sub_runs.append({
                 'sub_run_name': f'mesh_scan_det2_{mesh}_{drift}',
@@ -220,7 +226,7 @@ class Config:
         _drift_points = list(range(det2_mesh_op, 1000 + 1, 25))
         if _drift_points[-1] != 1000:
             _drift_points.append(1000)  # 25 V steps from 430 land on 980 — finish at 1000
-        for drift in _drift_points:
+        for drift in ([] if only_long_run else _drift_points):
             self.sub_runs.append({
                 'sub_run_name': f'drift_scan_det2_{det2_mesh_op}_{drift}',
                 'run_time': 30,  # Minutes
